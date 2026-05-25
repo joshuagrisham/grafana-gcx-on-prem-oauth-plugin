@@ -1,0 +1,20 @@
+services:
+  grafana:
+    extends:
+      file: .config/docker-compose-base.yaml
+      service: grafana
+    
+    # Override build args to use grafana:latest instead of grafana-enterprise:12.4.0
+    build:
+      args:
+        grafana_image: grafana
+        grafana_version: latest
+    environment:
+      #GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      #GF_AUTH_ANONYMOUS_ORG_ROLE: 'Viewer'
+      GF_AUTH_BASIC_ENABLED: 'true'
+      GF_FEATURE_TOGGLES_ENABLE: externalServiceAccounts
+      GF_AUTH_MANAGED_SERVICE_ACCOUNTS_ENABLED: 'true'
+      GF_PLUGINS_FORWARD_HOST_ENV_VARS: joshuagrisham-gcxonpremoauth-app
+      GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_USERNAME: admin
+      GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_PASSWORD: admin
