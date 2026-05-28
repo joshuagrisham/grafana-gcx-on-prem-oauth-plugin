@@ -1,7 +1,7 @@
 services:
   grafana:
     user: root
-    container_name: 'joshuagrisham-gcxonpremoauth-app'
+    container_name: grafana
 
     build:
       context: .

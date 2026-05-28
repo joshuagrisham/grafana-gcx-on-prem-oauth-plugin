@@ -24,6 +24,17 @@ var (
 	_ backend.CheckHealthHandler    = (*App)(nil)
 )
 
+// basicAuthOrgSwitchMutex serializes calls to /api/user/using/{orgId} so that
+// concurrent requests authenticating with the shared Basic Auth user cannot
+// race and end up operating in the wrong org.
+// Grafana does not currently honor the X-Grafana-Org-Id header on the service
+// account endpoints when using Basic Auth, so a global mutex is the simplest
+// option to avoid race conditions when switching the shared backend user's org.
+// Because the SDK creates one App instance per org, but the Basic Auth user is
+// a single global identity shared by all instances, this mutex must live at the
+// package scope rather than within the App.
+var basicAuthOrgSwitchMutex sync.Mutex
+
 // App is the Grafana gcx On-Prem OAuth app plugin backend.
 //
 // One App instance is created per Grafana Organization. The backend exposes
@@ -37,16 +48,6 @@ type App struct {
 	// Save startup contexts for use with the background cleanup process.
 	pluginCtx  backend.PluginContext
 	grafanaCfg *backend.GrafanaCfg
-
-	// orgSwitchMutex serializes calls to /api/user/using/{orgId} so that two
-	// concurrent requests authenticating with shared Basic Auth credentials
-	// cannot race and end up operating in the wrong org. Grafana does not
-	// currently honor the X-Grafana-Org-Id header on the service account
-	// endpoints when using Basic Auth, so a global mutex is the simplest
-	// option to avoid this problem.
-	// This mutex will only be used for non-default (orgId!=1) orgs, when the
-	// plugin is configured to use Basic Auth credentials.
-	orgSwitchMutex sync.Mutex
 
 	// Background cleanup process lifecycle.
 	bgCancel context.CancelFunc

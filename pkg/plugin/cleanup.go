@@ -127,7 +127,7 @@ func (a *App) cleanup(ctx context.Context) error {
 					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID,
 					"serviceAccountName", sa.Name, "error", err)
 			}
-			break
+			continue
 		}
 
 		// If the user is still active, clean up any expired tokens.
@@ -225,8 +225,7 @@ func (a *App) cleanupExpiredTokens(ctx context.Context, gCfg *backend.GrafanaCfg
 					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 					"tokenId", t.ID, "tokenName", t.Name,
 					"error", err)
-			}
-			if time.Since(exp) < a.tokenCleanupGracePeriod() {
+			} else if time.Since(exp) < a.tokenCleanupGracePeriod() {
 				backend.Logger.Debug("Token is expired but still within the grace period; skipping",
 					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 					"tokenId", t.ID, "tokenName", t.Name,

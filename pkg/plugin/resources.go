@@ -481,8 +481,8 @@ func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *backend.
 	// This will help to prevent race conditions with any other requests that
 	// might be executed by other users at the same time.
 
-	a.orgSwitchMutex.Lock()
-	defer a.orgSwitchMutex.Unlock()
+	basicAuthOrgSwitchMutex.Lock()
+	defer basicAuthOrgSwitchMutex.Unlock()
 
 	req := &apiRequest{
 		Method: http.MethodPost,

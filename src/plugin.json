@@ -16,6 +16,24 @@
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
+    "links": [
+      {
+        "name": "Website",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin"
+      },
+      {
+        "name": "Source",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/blob/main/LICENSE"
+      },
+      {
+        "name": "Report an issue",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/issues"
+      }
+    ],
     "screenshots": [],
     "version": "%VERSION%",
     "updated": "%TODAY%"

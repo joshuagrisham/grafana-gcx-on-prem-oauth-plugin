@@ -47,7 +47,10 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
     });
   };
 
-  const onSubmit = () => {
+  const onSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
+    if (event) {
+      event.preventDefault();
+    }
     if (isSubmitDisabled) {
       return;
     }
