@@ -1,6 +1,6 @@
 /* Copied straight from Grafana's own ServiceAccountTokensTable.tsx with exception of importing React and the ApiKey type */
 import React from 'react';
-import { type ApiKey } from '../Tokens';
+import { type ApiKey } from '../TokensPage';
 
 /* source: https://github.com/grafana/grafana/blob/538d9be70cba80ac309cd033bf12f4ec53565313/public/app/features/serviceaccounts/components/ServiceAccountTokensTable.tsx */
 

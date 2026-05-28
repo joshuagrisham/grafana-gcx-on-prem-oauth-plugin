@@ -4,6 +4,7 @@ import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import { Button, Field, FieldSet, SecretInput, useStyles2 } from '@grafana/ui';
+import { PLUGIN_ENV_VAR_PREFIX } from '../../constants';
 
 type AppPluginSettings = {
   token?: string;  
@@ -80,24 +81,39 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
       <ul className={`${s.colorWeak} ${s.list}`}>
         <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_TOKEN_MAX_SECONDS_TO_LIVE</code> Maximum
-          allowed token lifetime (in seconds) for tokens created by this plugin. Defaults to
-          <code>2592000</code> (30 days).
+          <code>{PLUGIN_ENV_VAR_PREFIX}_REQUEST_TIMEOUT</code> Per-request timeout applied to all
+          outbound Grafana API calls made by the plugin. Defaults to <code>30s</code>.
         </li>
         <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_TOKEN_CLEANUP_GRACE_PERIOD</code> Grace
-          period for expired tokens before they are automatically deleted by the plugin's
-          cleanup routine. Defaults to <code>72h</code> (3 days).
+          <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code> Basic Auth username to be used by
+          the plugin's backend service for authenticating to Grafana's API. See below for more
+          information.
         </li>
         <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_USERNAME</code> Basic
-          Auth username to be used by the plugin's backend service for authenticating to Grafana's
-          API. See below for more information.
+          <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code> Basic Auth password to be used by
+          the plugin's backend service for authenticating to Grafana's API. See below for more
+          information.
         </li>
         <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_PASSWORD</code> Basic
-          Auth password to be used by the plugin's backend service for authenticating to Grafana's
-          API. See below for more information.
+          <code>{PLUGIN_ENV_VAR_PREFIX}_MAX_TOKENS_PER_USER</code> Maximum number of concurrently
+          active tokens per user. New token creations beyond this limit are rejected. Defaults to
+          <code>20</code>. Set to <code>0</code> to disable.
+        </li>
+        <li>
+          <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_MAX_SECONDS_TO_LIVE</code> Maximum allowed token
+          lifetime (in seconds) for tokens created by this plugin. Defaults to <code>2592000</code>
+          (30 days).
+        </li>
+        <li>
+          <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_CLEANUP_GRACE_PERIOD</code> Grace period for expired
+          tokens before they are automatically deleted by the plugin's background cleanup process.
+          Defaults to <code>72h</code> (3 days).
+        </li>
+        <li>
+          <code>{PLUGIN_ENV_VAR_PREFIX}_CLEANUP_INTERVAL</code> How often the background cleanup
+          process runs. The background process cleans up expired tokens, removes service accounts
+          whose user is gone or disabled, and syncs role changes. Defaults to <code>1h</code>. Set
+          to <code>0</code> to disable.
         </li>
       </ul>
 
@@ -105,18 +121,9 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
 
       <p className={s.colorWeak}>
         The plugin's backend service must authenticate to Grafana's API to create per-user service
-        accounts and their tokens.
-      </p>
-
-      <p className={s.colorWeak}>
-        Grafana can automatically manage a backend service account for the default Organization
-        (<code>orgId=1</code>). See <a href="https://grafana.com/developers/plugin-tools/how-to-guides/app-plugins/use-a-service-account"
-        target="_blank" rel="noopener">Use service accounts in Grafana app plugins</a> for more
-        information and details on configuration requirements.
-      </p>
-
-      <p className={s.colorWeak}>
-        For additional Organizations, you can either:
+        accounts and their tokens. As the plugin needs the ability to assign roles to the user
+        service accounts it creates, it is not possible to use Grafana's managed plugin service
+        account feature. You can either:
       </p>
 
       <ul className={`${s.colorWeak} ${s.list}`}>
@@ -142,19 +149,11 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           <code>GF_AUTH_BASIC_ENABLED=true</code>).
         </li>
         <li>
-          Enable managed service accounts: set <code>auth.managed_service_accounts_enabled</code> to
-          <code>true</code> (or <code>GF_AUTH_MANAGED_SERVICE_ACCOUNTS_ENABLED=true</code>).
-        </li>
-        <li>
-          Enable the <code>externalServiceAccounts</code> feature.
-        </li>
-        <li>
           Add <code>{plugin.meta.id}</code> to <code>forward_host_env_vars</code>.
         </li>
         <li>
-          Set <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_USERNAME</code>
-          and <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_PASSWORD</code>
-          to the credentials of your <code>GrafanaAdmin</code> user.
+          Set <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code> and <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code> to
+          the credentials of your <code>GrafanaAdmin</code> user.
         </li>
       </ul>
 
@@ -167,8 +166,8 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
         </p>
 
         <p className={s.colorWeak}>
-          This is required for non-default Organizations unless your Grafana instance is configured
-          to use Basic Auth for this plugin as described above.
+          This is required unless your Grafana instance is configured to use Basic Auth for this
+          plugin as described above.
         </p>
 
         <Field label="Token">

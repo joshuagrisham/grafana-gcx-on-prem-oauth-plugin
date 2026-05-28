@@ -1,12 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Button, useStyles2 } from '@grafana/ui';
-import { PluginPage } from '@grafana/runtime';
-import { getBackendSrv } from '@grafana/runtime';
+import { Alert, Button, LoadingPlaceholder, useStyles2 } from '@grafana/ui';
+import { PluginPage, getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import { CreateTokenModal } from './components/CreateTokenModal';
 import { ServiceAccountTokensTable } from './components/ServiceAccountTokensTable';
+import { PLUGIN_RESOURCES_URL } from '../constants';
+
+// Display name used by CreateTokenModal when seeding a default token name.
+// Showing "grafana-gui" makes it obvious in the token list that the token
+// was minted from the Grafana UI rather than from the gcx CLI.
+const TOKEN_NAME_PREFIX = 'grafana-gui';
 
 export type Token = {
   id: number;
@@ -18,77 +23,76 @@ export type Token = {
   lastUsedAt?: string;
 };
 
-// Type alias so Grafana components work with our Token type
+// Type alias so Grafana's vendored components work with our Token type.
 export type ApiKey = Token & {
   isRevoked?: boolean;
   secondsUntilExpiration?: number;
 };
 
-// Enrich tokens with computed properties required by Grafana's components
-const enrichToken = (token: Token): ApiKey => ({
+type CreateResponse = Token & { warnings?: string[] };
+
+const enrichedToken = (token: Token): ApiKey => ({
   ...token,
-  isRevoked: false, // OSS doesn't support revocation
+  isRevoked: false,
   secondsUntilExpiration: token.expiration
-    ? Math.floor((new Date(token.expiration).getTime() - Date.now()) / 1000)
+    ? Math.max(0, Math.floor((new Date(token.expiration).getTime() - Date.now()) / 1000))
     : undefined,
 });
 
 const TokensPage = () => {
   const s = useStyles2(getStyles);
-  
-  // Get plugin ID from URL
-  const getPluginId = () => {
-    const matches = window.location.pathname.match(/\/api\/plugins\/([^\/]+)\//);
-    return matches ? matches[1] : 'joshuagrisham-gcxonpremoauth-app';
-  };
-  const pluginId = getPluginId();
 
   const [tokens, setTokens] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newToken, setNewToken] = useState<string>('');
+  const [noExpirationInfo, setNoExpirationInfo] = useState(false);
 
-  // Fetch tokens on mount
-  useEffect(() => {
-    fetchTokens();
-  }, []);
-
-  const fetchTokens = async () => {
+  const fetchTokens = useCallback(async () => {
     try {
-      setLoading(true);
-      const response = await getBackendSrv().fetch({
+      const response = await getBackendSrv().fetch<Token[]>({
         method: 'GET',
-        url: `/api/plugins/${pluginId}/resources/tokens`,
+        url: `${PLUGIN_RESOURCES_URL}/tokens`,
       });
       const result = await lastValueFrom(response);
-      const enrichedTokens = (result.data as Token[]).map(enrichToken);
-      setTokens(enrichedTokens);
+      setTokens((result.data ?? []).map(enrichedToken));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch tokens');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await fetchTokens();
+      if (!cancelled) {
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchTokens]);
 
   const handleCreateToken = async (data: { name: string; secondsToLive?: number }) => {
     try {
-      const response = await getBackendSrv().fetch({
+      const response = await getBackendSrv().fetch<CreateResponse>({
         method: 'POST',
-        url: `/api/plugins/${pluginId}/resources/token`,
-        data: {
-          name: data.name,
-          secondsToLive: data.secondsToLive,
-        },
+        url: `${PLUGIN_RESOURCES_URL}/token`,
+        data: { name: data.name, secondsToLive: data.secondsToLive },
       });
       const result = await lastValueFrom(response);
-      const createdToken = result.data as Token;
+      const created = result.data;
+      setNewToken(created?.key ?? '');
 
-      // Store the token key to display in the modal
-      setNewToken(createdToken.key || '');
+      // If the user selected "No expiration" in the modal, inform them that the
+      // token was created with the plugin's default max TTL instead.
+      if (!data.secondsToLive) {
+        setNoExpirationInfo(true);
+      }
 
-      // Refresh token list after creation
       await fetchTokens();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create token');
@@ -99,7 +103,7 @@ const TokensPage = () => {
     try {
       const response = await getBackendSrv().fetch({
         method: 'DELETE',
-        url: `/api/plugins/${pluginId}/resources/tokens/${token.id}`,
+        url: `${PLUGIN_RESOURCES_URL}/tokens/${token.id}`,
       });
       await lastValueFrom(response);
       await fetchTokens();
@@ -111,7 +115,7 @@ const TokensPage = () => {
   if (loading) {
     return (
       <PluginPage>
-        <div>Loading tokens...</div>
+        <LoadingPlaceholder text="Loading tokens..." />
       </PluginPage>
     );
   }
@@ -119,7 +123,21 @@ const TokensPage = () => {
   return (
     <PluginPage>
       <div>
-        {error && <div className={s.error}>{error}</div>}
+        {error && (
+          <Alert title="Error" severity="error" onRemove={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
+        {noExpirationInfo && (
+          <Alert
+            title="Tokens without an expiration date are not supported"
+            severity="info"
+            onRemove={() => setNoExpirationInfo(false)}
+          >
+            Your token was still created, we just used the maximum allowed expiration time instead.
+          </Alert>
+        )}
 
         <ServiceAccountTokensTable
           tokens={tokens}
@@ -132,6 +150,7 @@ const TokensPage = () => {
           onClick={() => setIsCreateModalOpen(true)}
           key="add-service-account-token"
           icon="plus"
+          className={s.addButton}
         >
           Add user token
         </Button>
@@ -139,7 +158,7 @@ const TokensPage = () => {
         <CreateTokenModal
           isOpen={isCreateModalOpen}
           token={newToken}
-          serviceAccountLogin={'plugin-app'}
+          serviceAccountLogin={TOKEN_NAME_PREFIX}
           onCreateToken={handleCreateToken}
           onClose={() => {
             setNewToken('');
@@ -154,11 +173,7 @@ const TokensPage = () => {
 export default TokensPage;
 
 const getStyles = (theme: GrafanaTheme2) => ({
-  error: css`
-    color: ${theme.colors.error.main};
-    padding: ${theme.spacing(2)};
-    background: ${theme.colors.error.transparent};
-    border-radius: ${theme.shape.radius.md};
-    margin-bottom: ${theme.spacing(2)};
+  addButton: css`
+    margin-top: ${theme.spacing(2)};
   `,
 });

@@ -20,12 +20,6 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
-  "iam": {
-    "permissions": [
-      { "action": "serviceaccounts:read", "scope": "serviceaccounts:*" },
-      { "action": "serviceaccounts:write", "scope": "serviceaccounts:*" }
-    ]
-  },
   "includes": [
     {
       "type": "page",
