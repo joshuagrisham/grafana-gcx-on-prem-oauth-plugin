@@ -82,51 +82,106 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
         the <code>forward_host_env_vars</code> setting.
       </p>
 
-      <ul className={`${s.colorWeak} ${s.list}`}>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_REQUEST_TIMEOUT</code> Per-request timeout applied to all
-          outbound Grafana API calls made by the plugin. Defaults to <code>30s</code>.
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code> Basic Auth username to be used by
-          the plugin's backend service for authenticating to Grafana's API. See below for more
-          information.
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code> Basic Auth password to be used by
-          the plugin's backend service for authenticating to Grafana's API. See below for more
-          information.
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_MAX_TOKENS_PER_USER</code> Maximum number of concurrently
-          active tokens per user. New token creations beyond this limit are rejected. Defaults to
-          <code>20</code>. Set to <code>0</code> to disable.
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_MAX_SECONDS_TO_LIVE</code> Maximum allowed token
-          lifetime (in seconds) for tokens created by this plugin. Defaults to <code>2592000</code>
-          (30 days).
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_CLEANUP_GRACE_PERIOD</code> Grace period for expired
-          tokens before they are automatically deleted by the plugin's background cleanup process.
-          Defaults to <code>72h</code> (3 days).
-        </li>
-        <li>
-          <code>{PLUGIN_ENV_VAR_PREFIX}_CLEANUP_INTERVAL</code> How often the background cleanup
-          process runs. The background process cleans up expired tokens, removes service accounts
-          whose user is gone or disabled, and syncs role changes. Defaults to <code>1h</code>. Set
-          to <code>0</code> to disable.
-        </li>
-      </ul>
+      <table className={s.envVarTable}>
+        <thead>
+          <tr>
+            <th>
+              Variable
+            </th>
+            <th>
+              Default
+            </th>
+            <th>
+              Description
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_REQUEST_TIMEOUT</code>
+            </td>
+            <td>
+              <code>30s</code>
+            </td>
+            <td>
+              Per-request timeout applied to all outbound Grafana API calls made by the plugin.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code>
+            </td>
+            <td></td>
+            <td>
+              Basic Auth username for the plugin backend service. See below for more information.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code>
+            </td>
+            <td></td>
+            <td>
+              Basic Auth password for the plugin backend service. See below for more information.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_MAX_TOKENS_PER_USER</code>
+            </td>
+            <td>
+              <code>20</code>
+            </td>
+            <td>
+              Maximum number of concurrently active tokens per user. New token creations beyond this
+              limit are rejected. Set to <code>0</code> to disable.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_MAX_SECONDS_TO_LIVE</code>
+            </td>
+            <td>
+              <code>2592000</code> (30 days)
+            </td>
+            <td>
+              Maximum allowed token lifetime in seconds.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_CLEANUP_GRACE_PERIOD</code>
+            </td>
+            <td>
+              <code>72h</code> (3 days)
+            </td>
+            <td>
+              Grace period for expired tokens before they are automatically deleted by the
+              background cleanup process.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_CLEANUP_INTERVAL</code>
+            </td>
+            <td>
+              <code>1h</code>
+            </td>
+            <td>
+              How often the background cleanup process runs. Set to <code>0</code> to disable.
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <h2>Backend service Grafana API authentication</h2>
 
       <p className={s.colorWeak}>
-        The plugin's backend service must authenticate to Grafana's API to create per-user service
-        accounts and their tokens. As the plugin needs the ability to assign roles to the user
-        service accounts it creates, it is not possible to use Grafana's managed plugin service
-        account feature. You can either:
+        The plugin&apos;s backend service must authenticate to Grafana&apos;s API to create per-user
+        service accounts and their tokens. As the plugin needs the ability to assign roles to the
+        user service accounts it creates, it is not possible to use Grafana&apos;s managed plugin
+        service account feature. You can either:
       </p>
 
       <ul className={`${s.colorWeak} ${s.list}`}>
@@ -163,8 +218,8 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
       <FieldSet label="Organization Service Account Token">
 
         <p className={s.colorWeak}>
-          Provide a token here if you want the plugin's backend service to use it when
-          authenticating to Grafana's API for creating per-user Service Accounts and tokens within
+          Provide a token here if you want the plugin&apos;s backend service to use it when
+          authenticating to Grafana&apos;s API for creating per-user Service Accounts and tokens within
           this Organization.
         </p>
 
@@ -210,6 +265,30 @@ const getStyles = (theme: GrafanaTheme2) => ({
   list: css`
     padding-left: ${theme.spacing(3)};
     margin-bottom: ${theme.spacing(3)};
+  `,
+  envVarTable: css`
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: ${theme.spacing(3)};
+    color: ${theme.colors.text.secondary};
+
+    th,
+    td {
+      text-align: left;
+      padding: ${theme.spacing(0.75, 2)};
+      border-bottom: 1px solid ${theme.colors.border.weak};
+      vertical-align: top;
+    }
+
+    th {
+      color: ${theme.colors.text.primary};
+      font-weight: ${theme.typography.fontWeightMedium};
+      border-bottom-color: ${theme.colors.border.medium};
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
   `,
 });
 
