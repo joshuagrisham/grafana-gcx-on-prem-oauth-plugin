@@ -8,5 +8,6 @@ export const PLUGIN_ENV_VAR_PREFIX = `GF_PLUGIN_${PLUGIN_ID.replaceAll('-', '_')
 export enum ROUTES {
   Authorize = 'authorize',
   Menu = 'menu',
+  SetMeUp = 'client-setup',
   Tokens = 'tokens',
 }

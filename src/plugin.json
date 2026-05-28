@@ -8,7 +8,7 @@
   "executable": "gpx_joshuagrisham_gcxonpremoauth_app",
   "info": {
     "keywords": ["gcx", "oauth", "on-prem", "authentication", "cli"],
-    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with `gcx` and other client applications",
+    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with gcx and other client applications",
     "author": {
       "name": "Joshua Grisham"
     },
@@ -34,7 +34,24 @@
         "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/issues"
       }
     ],
-    "screenshots": [],
+    "screenshots": [
+      {
+        "name": "Menu page",
+        "path": "img/screenshots/menu.png"
+      },
+      {
+        "name": "Client setup page",
+        "path": "img/screenshots/set-me-up.png"
+      },
+      {
+        "name": "Manage user tokens page",
+        "path": "img/screenshots/manage-user-tokens.png"
+      },
+      {
+        "name": "CLI sign-in success",
+        "path": "img/screenshots/cli-connected.png"
+      }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
@@ -61,6 +78,13 @@
     },
     {
       "type": "page",
+      "icon": "rocket",
+      "name": "Set me up",
+      "path": "/a/%PLUGIN_ID%/client-setup",
+      "addToNav": true
+    },
+    {
+      "type": "page",
       "icon": "key-skeleton-alt",
       "name": "Manage all user service accounts",
       "path": "/org/serviceaccounts",
@@ -70,7 +94,7 @@
     {
       "type": "page",
       "icon": "cog",
-      "name": "Plugin settings",
+      "name": "Plugin configuration",
       "path": "/plugins/%PLUGIN_ID%",
       "role": "Admin",
       "addToNav": true
