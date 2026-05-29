@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/httpclient"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 // Make sure App implements required interfaces. This is important to do
@@ -47,7 +48,7 @@ type App struct {
 
 	// Save startup contexts for use with the background cleanup process.
 	pluginCtx  backend.PluginContext
-	grafanaCfg *backend.GrafanaCfg
+	grafanaCfg *config.GrafanaCfg
 
 	// Background cleanup process lifecycle.
 	bgCancel context.CancelFunc
@@ -57,7 +58,7 @@ type App struct {
 // NewApp creates a new App instance.
 func NewApp(ctx context.Context, _ backend.AppInstanceSettings) (instancemgmt.Instance, error) {
 	pCtx := backend.PluginConfigFromContext(ctx)
-	gCfg := backend.GrafanaConfigFromContext(ctx)
+	gCfg := config.GrafanaConfigFromContext(ctx)
 
 	a := &App{
 		pluginCtx:  pCtx,
@@ -92,7 +93,7 @@ func NewApp(ctx context.Context, _ backend.AppInstanceSettings) (instancemgmt.In
 
 	backend.Logger.Info("Plugin instance started",
 		"pluginId", pCtx.PluginID,
-		"orgId", pCtx.OrgID,
+		"orgId", pCtx.OrgID, // nolint:staticcheck
 		"maxTokensPerUser", fmt.Sprintf("%d", a.maxTokensPerUser()),
 		"tokenMaxTTLSeconds", fmt.Sprintf("%d", a.maxTokenTTL()),
 		"cleanupInterval", a.cleanupInterval().String(),
@@ -122,7 +123,7 @@ func (a *App) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequest) (*
 	if pCtx.PluginID == "" {
 		pCtx = a.pluginCtx
 	}
-	gCfg := backend.GrafanaConfigFromContext(ctx)
+	gCfg := config.GrafanaConfigFromContext(ctx)
 	if gCfg == nil {
 		gCfg = a.grafanaCfg
 	}
@@ -143,23 +144,17 @@ func (a *App) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequest) (*
 
 	var warnings []string
 
-	// The managed plugin service account is only supported in OrgID 1
-	// (see https://grafana.com/developers/plugin-tools/how-to-guides/app-plugins/use-a-service account).
-	// For any other org the operator must either provision an Org-scoped
-	// service account token in the plugin's settings or wire up Basic Auth.
-	if pCtx.OrgID != 1 {
-		hasOrgToken := false
-		if pCtx.AppInstanceSettings != nil {
-			if v, ok := pCtx.AppInstanceSettings.DecryptedSecureJSONData["token"]; ok && v != "" {
-				hasOrgToken = true
-			}
+	hasOrgToken := false
+	if pCtx.AppInstanceSettings != nil {
+		if v, ok := pCtx.AppInstanceSettings.DecryptedSecureJSONData["token"]; ok && v != "" {
+			hasOrgToken = true
 		}
-		_, _, hasBasic := a.backendBasicAuth()
-		if !hasOrgToken && !hasBasic {
-			warnings = append(warnings, fmt.Sprintf(
-				"orgId %d has no Organization service account token configured and no Basic Auth credentials are set; the managed plugin service account only works in orgId 1",
-				pCtx.OrgID))
-		}
+	}
+	_, _, hasBasic := a.backendBasicAuth()
+	if !hasOrgToken && !hasBasic {
+		warnings = append(warnings, fmt.Sprintf(
+			"orgId %d has no Organization service account token configured and no Basic Auth credentials are set; the managed plugin service account only works in orgId 1",
+			pCtx.OrgID)) // nolint:staticcheck
 	}
 
 	if len(warnings) > 0 {

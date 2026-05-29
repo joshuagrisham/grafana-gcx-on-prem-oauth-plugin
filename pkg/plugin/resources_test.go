@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 // ---------------------------------------------------------------------------
@@ -381,7 +382,7 @@ func (h *testHarness) request(t *testing.T, method, path string, body any, user 
 	ctx = backend.WithPluginContext(ctx, backend.PluginContext{
 		PluginID: testPluginID, OrgID: 1,
 	})
-	ctx = backend.WithGrafanaConfig(ctx, backend.NewGrafanaCfg(map[string]string{
+	ctx = config.WithGrafanaConfig(ctx, config.NewGrafanaCfg(map[string]string{
 		"GF_APP_URL": h.fake.URL(),
 	}))
 	ctx = backend.WithUser(ctx, user)
