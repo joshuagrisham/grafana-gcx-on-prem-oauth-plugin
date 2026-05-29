@@ -22,6 +22,8 @@ jobs:
           persist-credentials: false
 
       - uses: grafana/plugin-actions/build-plugin@8b12a2d6fa5fc0939a6bf75905453d4b505ef29a # build-plugin/v1.2.0
-        with:
-          policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
-          attestation: true
+        # For now we will not sign the plugin, but still want to create a release for it
+        # TODO: Enable once the plugin has been submitted and accepted by Grafana
+        #with:
+          #policy_token: '' # secrets.GRAFANA_ACCESS_POLICY_TOKEN
+          #attestation: true
