@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-05-29)
+
+Upgrade to latest Grafana Plugin Go SDK and fix various dependency and linting issues as a result.
+
 ## 0.1.0 (2026-05-29)
 
 Initial preview release of the gcx On-Prem OAuth Grafana app plugin.
