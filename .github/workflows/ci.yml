@@ -90,7 +90,9 @@ jobs:
 
       - name: Sign plugin
         run: npm run sign
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
+        if: ${{ false && env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
+        # TODO: Enable after plugin is submitted and approved in the Grafana plugin catalog.
+        # Refer to: https://grafana.com/developers/plugin-tools/publish-a-plugin/publish-a-plugin/
 
       - name: Get plugin metadata
         id: metadata
