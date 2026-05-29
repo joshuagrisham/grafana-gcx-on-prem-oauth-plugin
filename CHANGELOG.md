@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 (2026-05-29)
+
+- Add optional `BACKEND_URL` environment variable to allow overriding the URL the backend service
+  should use when communicating with the Grafana API. This can be necessary to override in case your
+  Grafana instance is behind a reverse proxy or has a custom URL.
+- Add optional `BACKEND_INSECURE_TLS` environment variable to allow for ignoring TLS certificate
+  handshake issues when the backend service communicates with the Grafana API.
+
 ## 0.1.1 (2026-05-29)
 
 Upgrade to latest Grafana Plugin Go SDK and fix various dependency and linting issues as a result.

@@ -349,6 +349,9 @@ func newHarness(t *testing.T) *testHarness {
 			PluginID: testPluginID,
 			OrgID:    1,
 		},
+		grafanaCfg: config.NewGrafanaCfg(map[string]string{
+			"GF_APP_URL": fake.URL(),
+		}),
 	}
 	mux := http.NewServeMux()
 	app.registerRoutes(mux)

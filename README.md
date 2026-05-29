@@ -114,13 +114,15 @@ The **More apps > gcx On-Prem OAuth > Plugin configuration** page requires the G
 
 The plugin ID `joshuagrisham-gcxonpremoauth-app` must appear in Grafana's `forward_host_env_vars` setting so the plugin can read environment variables from the Grafana server process.
 
-| Variable                                                                | Default   | Description                                                        |
-| ----------------------------------------------------------------------- | --------- | ------------------------------------------------------------------ |
-| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_REQUEST_TIMEOUT`            | `30s`     | Per-request timeout for outbound calls to the Grafana HTTP API.    |
-| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_MAX_TOKENS_PER_USER`        | `20`      | Maximum concurrently active tokens per user. `0` disables the cap. |
-| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_MAX_SECONDS_TO_LIVE`  | `2592000` | Maximum TTL, in seconds, the plugin will mint (default 30 days).   |
-| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_CLEANUP_GRACE_PERIOD` | `72h`     | Grace period after expiration before tokens are auto-deleted.      |
-| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_CLEANUP_INTERVAL`           | `1h`      | How often the background cleanup process runs. `0` disables it.    |
+| Variable                                                                | Default   | Description                                                                     |
+| ----------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_REQUEST_TIMEOUT`            | `30s`     | Per-request timeout for outbound calls to the Grafana HTTP API.                 |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_URL`                |           | Optional override for the URL where the backend sends all Grafana API requests. |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_INSECURE_TLS`       | `false`   | If requests to the Grafana API should skip TLS certificate verification.        |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_MAX_TOKENS_PER_USER`        | `20`      | Maximum concurrently active tokens per user. `0` disables the cap.              |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_MAX_SECONDS_TO_LIVE`  | `2592000` | Maximum TTL, in seconds, the plugin will mint (default 30 days).                |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_CLEANUP_GRACE_PERIOD` | `72h`     | Grace period after expiration before tokens are auto-deleted.                   |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_CLEANUP_INTERVAL`           | `1h`      | How often the background cleanup process runs. `0` disables it.                 |
 
 ## Security model
 

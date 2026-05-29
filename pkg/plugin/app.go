@@ -65,8 +65,15 @@ func NewApp(ctx context.Context, _ backend.AppInstanceSettings) (instancemgmt.In
 		grafanaCfg: gCfg,
 	}
 
+	if a.backendUrl() == "" {
+		return nil, fmt.Errorf("no backend URL configured; set GF_APP_URL or the plugin's BACKEND_URL env var")
+	}
+
 	timeout := a.requestTimeout()
 	client, err := httpclient.New(httpclient.Options{
+		TLS: &httpclient.TLSOptions{
+			InsecureSkipVerify: a.backendInsecureTLS(),
+		},
 		Timeouts: &httpclient.TimeoutOptions{
 			Timeout:               timeout,
 			DialTimeout:           httpclient.DefaultTimeoutOptions.DialTimeout,

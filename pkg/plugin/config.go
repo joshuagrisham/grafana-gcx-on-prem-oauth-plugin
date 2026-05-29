@@ -18,11 +18,12 @@ const serviceAccountPrefix = "user:"
 // Defaults for configurable behavior. All can be overridden by environment
 // variables in the form GF_PLUGIN_<PLUGIN_ID>_<NAME>.
 const (
+	defaultRequestTimeout        = "30s"
+	defaultBackendInsecureTLS    = false
 	defaultTokenMaxSecondsToLive = "2592000" // 30 days
 	defaultTokenCleanupGrace     = "72h"
 	defaultMaxTokensPerUser      = "20"
 	defaultCleanupInterval       = "1h"
-	defaultRequestTimeout        = "30s"
 
 	// Hard cap on the length of a user-supplied token name. Grafana itself
 	// accepts very long names but unbounded user input could lead to undesired
@@ -95,6 +96,25 @@ func (a *App) cleanupInterval() time.Duration {
 func (a *App) requestTimeout() time.Duration {
 	defaultValue, _ := time.ParseDuration(defaultRequestTimeout)
 	return a.pluginEnvDuration("REQUEST_TIMEOUT", defaultValue)
+}
+
+// backendUrl returns the URL of the Grafana API that this backend plugin should
+// use for all API requests. Defaults to the AppURL from the Grafana config, but
+// can be overridden by env var.
+func (a *App) backendUrl() string {
+	defaultValue, _ := a.grafanaCfg.AppURL()
+	return a.pluginEnv("BACKEND_URL", defaultValue)
+}
+
+// backendInsecureTLS returns whether the backend should use insecure TLS
+// (skip certificate verification).
+func (a *App) backendInsecureTLS() bool {
+	value, err := strconv.ParseBool(a.pluginEnv("BACKEND_INSECURE_TLS", strconv.FormatBool(defaultBackendInsecureTLS)))
+	if err != nil {
+		backend.Logger.Warn("Invalid env var value, using default", "name", a.pluginEnvName("BACKEND_INSECURE_TLS"), "default", defaultBackendInsecureTLS, "error", err)
+		return defaultBackendInsecureTLS
+	}
+	return value
 }
 
 // backendBasicAuth returns the configured basic-auth credentials, if any.

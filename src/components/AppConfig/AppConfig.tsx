@@ -110,6 +110,29 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           </tr>
           <tr>
             <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_URL</code>
+            </td>
+            <td></td>
+            <td>
+              URL of the Grafana API that the plugin backend service should use for all API
+              requests. Defaults to the AppURL from the Grafana config, but can be necessary to
+              override in case your Grafana instance is behind a reverse proxy or has a custom URL.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_INSECURE_TLS</code>
+            </td>
+            <td>
+              <code>false</code>
+            </td>
+            <td>
+              If requests from the plugin backend service to the Grafana API should skip TLS
+              certificate verification.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code>
             </td>
             <td></td>
