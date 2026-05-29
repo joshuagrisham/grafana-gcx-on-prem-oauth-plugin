@@ -1,8 +1,22 @@
 apiVersion: 1
 
 apps:
-#  - type: 'joshuagrisham-gcxonpremoauth-app'
-#    org_id: 1
-#    disabled: false
-#    secureJsonData:
-#      token: test
+  # OrgID 1: uses the managed plugin service account (externalServiceAccounts).
+  # No secret needed here -- Grafana injects the token automatically.
+  - type: joshuagrisham-gcxonpremoauth-app
+    org_id: 1
+    disabled: false
+
+  # Example: OrgID 2 authenticated with an Organization-scoped service-account
+  # token. Create the token manually (or via scripts/setup-test-orgs.sh) and
+  # paste its value here, or set it from a file/env in your wrapper compose.
+  # - type: joshuagrisham-gcxonpremoauth-app
+  #   org_id: 2
+  #   disabled: false
+  #   secureJsonData:
+  #     token: glsa_REPLACE_ME
+
+  # OrgID 3 is intentionally not listed here. Without a per-org Org token
+  # configured, the plugin instance for that org falls back to Basic Auth
+  # using the GF_PLUGIN_*_BACKEND_USERNAME / _BACKEND_PASSWORD env vars set
+  # on the Grafana server process.

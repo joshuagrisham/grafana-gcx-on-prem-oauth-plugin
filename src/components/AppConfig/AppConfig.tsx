@@ -4,6 +4,7 @@ import { css } from '@emotion/css';
 import { AppPluginMeta, GrafanaTheme2, PluginConfigPageProps, PluginMeta } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import { Button, Field, FieldSet, SecretInput, useStyles2 } from '@grafana/ui';
+import { PLUGIN_ENV_VAR_PREFIX } from '../../constants';
 
 type AppPluginSettings = {
   token?: string;  
@@ -46,7 +47,10 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
     });
   };
 
-  const onSubmit = () => {
+  const onSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
+    if (event) {
+      event.preventDefault();
+    }
     if (isSubmitDisabled) {
       return;
     }
@@ -78,45 +82,106 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
         the <code>forward_host_env_vars</code> setting.
       </p>
 
-      <ul className={`${s.colorWeak} ${s.list}`}>
-        <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_TOKEN_MAX_SECONDS_TO_LIVE</code> Maximum
-          allowed token lifetime (in seconds) for tokens created by this plugin. Defaults to
-          <code>2592000</code> (30 days).
-        </li>
-        <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_TOKEN_CLEANUP_GRACE_PERIOD</code> Grace
-          period for expired tokens before they are automatically deleted by the plugin's
-          cleanup routine. Defaults to <code>72h</code> (3 days).
-        </li>
-        <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_USERNAME</code> Basic
-          Auth username to be used by the plugin's backend service for authenticating to Grafana's
-          API. See below for more information.
-        </li>
-        <li>
-          <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_PASSWORD</code> Basic
-          Auth password to be used by the plugin's backend service for authenticating to Grafana's
-          API. See below for more information.
-        </li>
-      </ul>
+      <table className={s.envVarTable}>
+        <thead>
+          <tr>
+            <th>
+              Variable
+            </th>
+            <th>
+              Default
+            </th>
+            <th>
+              Description
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_REQUEST_TIMEOUT</code>
+            </td>
+            <td>
+              <code>30s</code>
+            </td>
+            <td>
+              Per-request timeout applied to all outbound Grafana API calls made by the plugin.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code>
+            </td>
+            <td></td>
+            <td>
+              Basic Auth username for the plugin backend service. See below for more information.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code>
+            </td>
+            <td></td>
+            <td>
+              Basic Auth password for the plugin backend service. See below for more information.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_MAX_TOKENS_PER_USER</code>
+            </td>
+            <td>
+              <code>20</code>
+            </td>
+            <td>
+              Maximum number of concurrently active tokens per user. New token creations beyond this
+              limit are rejected. Set to <code>0</code> to disable.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_MAX_SECONDS_TO_LIVE</code>
+            </td>
+            <td>
+              <code>2592000</code> (30 days)
+            </td>
+            <td>
+              Maximum allowed token lifetime in seconds.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_TOKEN_CLEANUP_GRACE_PERIOD</code>
+            </td>
+            <td>
+              <code>72h</code> (3 days)
+            </td>
+            <td>
+              Grace period for expired tokens before they are automatically deleted by the
+              background cleanup process.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>{PLUGIN_ENV_VAR_PREFIX}_CLEANUP_INTERVAL</code>
+            </td>
+            <td>
+              <code>1h</code>
+            </td>
+            <td>
+              How often the background cleanup process runs. Set to <code>0</code> to disable.
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <h2>Backend service Grafana API authentication</h2>
 
       <p className={s.colorWeak}>
-        The plugin's backend service must authenticate to Grafana's API to create per-user service
-        accounts and their tokens.
-      </p>
-
-      <p className={s.colorWeak}>
-        Grafana can automatically manage a backend service account for the default Organization
-        (<code>orgId=1</code>). See <a href="https://grafana.com/developers/plugin-tools/how-to-guides/app-plugins/use-a-service-account"
-        target="_blank" rel="noopener">Use service accounts in Grafana app plugins</a> for more
-        information and details on configuration requirements.
-      </p>
-
-      <p className={s.colorWeak}>
-        For additional Organizations, you can either:
+        The plugin&apos;s backend service must authenticate to Grafana&apos;s API to create per-user
+        service accounts and their tokens. As the plugin needs the ability to assign roles to the
+        user service accounts it creates, it is not possible to use Grafana&apos;s managed plugin
+        service account feature. You can either:
       </p>
 
       <ul className={`${s.colorWeak} ${s.list}`}>
@@ -142,33 +207,25 @@ const AppConfig = ({ plugin }: AppConfigProps) => {
           <code>GF_AUTH_BASIC_ENABLED=true</code>).
         </li>
         <li>
-          Enable managed service accounts: set <code>auth.managed_service_accounts_enabled</code> to
-          <code>true</code> (or <code>GF_AUTH_MANAGED_SERVICE_ACCOUNTS_ENABLED=true</code>).
-        </li>
-        <li>
-          Enable the <code>externalServiceAccounts</code> feature.
-        </li>
-        <li>
           Add <code>{plugin.meta.id}</code> to <code>forward_host_env_vars</code>.
         </li>
         <li>
-          Set <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_USERNAME</code>
-          and <code>GF_PLUGIN_{plugin.meta.id.replaceAll("-", "_").toUpperCase()}_BACKEND_PASSWORD</code>
-          to the credentials of your <code>GrafanaAdmin</code> user.
+          Set <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_USERNAME</code> and <code>{PLUGIN_ENV_VAR_PREFIX}_BACKEND_PASSWORD</code> to
+          the credentials of your <code>GrafanaAdmin</code> user.
         </li>
       </ul>
 
       <FieldSet label="Organization Service Account Token">
 
         <p className={s.colorWeak}>
-          Provide a token here if you want the plugin's backend service to use it when
-          authenticating to Grafana's API for creating per-user Service Accounts and tokens within
+          Provide a token here if you want the plugin&apos;s backend service to use it when
+          authenticating to Grafana&apos;s API for creating per-user Service Accounts and tokens within
           this Organization.
         </p>
 
         <p className={s.colorWeak}>
-          This is required for non-default Organizations unless your Grafana instance is configured
-          to use Basic Auth for this plugin as described above.
+          This is required unless your Grafana instance is configured to use Basic Auth for this
+          plugin as described above.
         </p>
 
         <Field label="Token">
@@ -208,6 +265,30 @@ const getStyles = (theme: GrafanaTheme2) => ({
   list: css`
     padding-left: ${theme.spacing(3)};
     margin-bottom: ${theme.spacing(3)};
+  `,
+  envVarTable: css`
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: ${theme.spacing(3)};
+    color: ${theme.colors.text.secondary};
+
+    th,
+    td {
+      text-align: left;
+      padding: ${theme.spacing(0.75, 2)};
+      border-bottom: 1px solid ${theme.colors.border.weak};
+      vertical-align: top;
+    }
+
+    th {
+      color: ${theme.colors.text.primary};
+      font-weight: ${theme.typography.fontWeightMedium};
+      border-bottom-color: ${theme.colors.border.medium};
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
   `,
 });
 

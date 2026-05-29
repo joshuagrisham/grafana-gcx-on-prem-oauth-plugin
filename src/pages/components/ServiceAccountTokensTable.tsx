@@ -1,11 +1,10 @@
-/* Copied straight from Grafana's own ServiceAccountTokensTable.tsx with exception of importing React and the ApiKey type */
-import React from 'react';
-import { type ApiKey } from '../Tokens';
+/* Copied straight from Grafana's own ServiceAccountTokensTable.tsx with exception of adding a React import and changing the ApiKey import*/
+import { type ApiKey } from '../TokensPage';
 
 /* source: https://github.com/grafana/grafana/blob/538d9be70cba80ac309cd033bf12f4ec53565313/public/app/features/serviceaccounts/components/ServiceAccountTokensTable.tsx */
 
 import { css, cx } from '@emotion/css';
-import type { JSX } from 'react';
+import React, { type JSX } from 'react';
 
 import { dateTimeFormat, type GrafanaTheme2, type TimeZone, dateTimeFormatTimeAgo } from '@grafana/data';
 import { Trans, t } from '@grafana/i18n';

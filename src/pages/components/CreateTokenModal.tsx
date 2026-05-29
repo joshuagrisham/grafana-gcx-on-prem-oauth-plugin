@@ -1,10 +1,10 @@
-/* Copied straight from Grafana's own CreateTokenModal.tsx with exception of importing React */
-import React from 'react';
+/* Copied straight from Grafana's own CreateTokenModal.tsx with exception of adding a React import */
+/* eslint-disable react-hooks/set-state-in-effect */
 
 /* source: https://github.com/grafana/grafana/blob/538d9be70cba80ac309cd033bf12f4ec53565313/public/app/features/serviceaccounts/components/CreateTokenModal.tsx */
 
 import { css } from '@emotion/css';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 import { type GrafanaTheme2 } from '@grafana/data';

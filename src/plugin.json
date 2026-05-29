@@ -7,8 +7,8 @@
   "autoEnabled": true,
   "executable": "gpx_joshuagrisham_gcxonpremoauth_app",
   "info": {
-    "keywords": ["gcx", "oauth", "on-prem", "authentication", "cli"],
-    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with `gcx` and other client applications",
+    "keywords": ["gcx", "mcp-grafana", "cli", "on-prem", "oauth", "authentication"],
+    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with gcx, mcp-grafana, and other client applications",
     "author": {
       "name": "Joshua Grisham"
     },
@@ -16,15 +16,44 @@
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
-    "screenshots": [],
+    "links": [
+      {
+        "name": "Website",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin"
+      },
+      {
+        "name": "Source",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/blob/main/LICENSE"
+      },
+      {
+        "name": "Report an issue",
+        "url": "https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/issues"
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "Menu page",
+        "path": "img/screenshots/menu.png"
+      },
+      {
+        "name": "Manage user tokens page",
+        "path": "img/screenshots/manage-user-tokens.png"
+      },
+      {
+        "name": "Client setup page",
+        "path": "img/screenshots/client-setup.png"
+      },
+      {
+        "name": "CLI sign-in success",
+        "path": "img/screenshots/cli-connected.png"
+      }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
-  },
-  "iam": {
-    "permissions": [
-      { "action": "serviceaccounts:read", "scope": "serviceaccounts:*" },
-      { "action": "serviceaccounts:write", "scope": "serviceaccounts:*" }
-    ]
   },
   "includes": [
     {
@@ -49,6 +78,13 @@
     },
     {
       "type": "page",
+      "icon": "rocket",
+      "name": "Client setup",
+      "path": "/a/%PLUGIN_ID%/client-setup",
+      "addToNav": true
+    },
+    {
+      "type": "page",
       "icon": "key-skeleton-alt",
       "name": "Manage all user service accounts",
       "path": "/org/serviceaccounts",
@@ -58,14 +94,14 @@
     {
       "type": "page",
       "icon": "cog",
-      "name": "Plugin settings",
+      "name": "Plugin configuration",
       "path": "/plugins/%PLUGIN_ID%",
       "role": "Admin",
       "addToNav": true
     }
   ],
   "dependencies": {
-    "grafanaDependency": ">=12.3.0",
+    "grafanaDependency": ">=11.0.0",
     "plugins": []
   }
 }

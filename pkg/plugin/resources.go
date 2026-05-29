@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,166 +16,169 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
+// ---------------------------------------------------------------------------
+// HTTP handlers
+// ---------------------------------------------------------------------------
+
 func (a *App) handleTokenCreate(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	pCtx := backend.PluginConfigFromContext(req.Context())
+	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	user := backend.UserFromContext(req.Context())
 
 	var body struct {
 		Name          string `json:"name"`
 		SecondsToLive *int64 `json:"secondsToLive,omitempty"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := json.NewDecoder(io.LimitReader(req.Body, 64<<10)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: %v", err)
 		return
 	}
 
-	pcfg := backend.PluginConfigFromContext(req.Context())
-
-	// Enforce max token TTL from environment variable; defaults to 30 days
-	maxSecondsToLive, exists := os.LookupEnv("GF_PLUGIN_" + strings.ToUpper(strings.ReplaceAll(pcfg.PluginID, "-", "_")) + "_TOKEN_MAX_SECONDS_TO_LIVE")
-	if !exists {
-		maxSecondsToLive = "2592000" // 30 days
+	// Token name validation.
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" {
+		writeError(w, http.StatusBadRequest, "token name is required")
+		return
 	}
-	maxTTL, err := strconv.ParseInt(maxSecondsToLive, 10, 64)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error parsing max seconds to live: %v", err), http.StatusInternalServerError)
+	if len(body.Name) > maxTokenNameLength {
+		writeError(w, http.StatusBadRequest, "token name must be %d characters or fewer", maxTokenNameLength)
 		return
 	}
 
-	// Use the requested TTL, or the max if not specified
+	// Reject TTLs that are zero, negative, or larger than the maximum allowed.
+	maxTTL := a.maxTokenTTL()
+	if body.SecondsToLive != nil && (*body.SecondsToLive <= 0 || *body.SecondsToLive > maxTTL) {
+		writeError(w, http.StatusBadRequest, "secondsToLive must be an integer between 1 (1s) and %d (%s)", maxTTL, (time.Duration(maxTTL) * time.Second).String())
+		return
+	}
+
+	// If the user requested a specific secondsToLive, use it; otherwise, use the plugin's default.
 	ttl := maxTTL
-	if body.SecondsToLive != nil && *body.SecondsToLive < maxTTL {
+	if body.SecondsToLive != nil {
 		ttl = *body.SecondsToLive
 	}
 
-	// Get the requesting user's Service Account
-	userServiceAccount, err := a.findOrCreateServiceAccount(req.Context())
+	sa, err := a.findOrCreateServiceAccount(req.Context(), gCfg, pCtx, user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, err)
 		return
 	}
 
-	// Clean up any expired tokens before doing anything else
-	tokens, err := a.listTokens(req.Context(), userServiceAccount)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// Reject if the user has already reached their max per-user token limit.
+	if maxTokensPerUser := a.maxTokensPerUser(); maxTokensPerUser > 0 {
+		tokens, err := a.listTokens(req.Context(), gCfg, pCtx, sa)
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		activeUserTokens := int64(0)
+		for _, t := range tokens {
+			if !t.HasExpired {
+				activeUserTokens++
+			}
+		}
+		if activeUserTokens >= maxTokensPerUser {
+			writeError(w, http.StatusTooManyRequests,
+				"token limit reached (used %d of %d allowed active tokens); delete an existing token before creating a new one", activeUserTokens, maxTokensPerUser)
+			return
+		}
 	}
-	if err := a.cleanUpExpiredTokens(req.Context(), userServiceAccount, tokens); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+	t, err := a.createToken(req.Context(), gCfg, pCtx, sa, body.Name, ttl)
+	if err != nil {
+		writeAPIError(w, err)
 		return
 	}
 
-	// Create and return the token with the validated TTL
-	newToken, err := a.createToken(req.Context(), userServiceAccount, body.Name, ttl)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Add("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(newToken); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	backend.Logger.Info("Token created",
+		"orgId", pCtx.OrgID, "userLogin", user.Login,
+		"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+		"tokenId", t.ID, "tokenName", t.Name,
+		"secondsToLive", fmt.Sprintf("%d", ttl))
+
+	writeJSON(w, http.StatusOK, t)
 }
 
 func (a *App) handleTokenList(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	pCtx := backend.PluginConfigFromContext(req.Context())
+	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	user := backend.UserFromContext(req.Context())
 
-	userServiceAccount, err := a.findOrCreateServiceAccount(req.Context())
+	sa, err := a.findOrCreateServiceAccount(req.Context(), gCfg, pCtx, user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, err)
 		return
 	}
-
-	// Clean up any expired tokens before doing anything else
-	tokens, err := a.listTokens(req.Context(), userServiceAccount)
+	tokens, err := a.listTokens(req.Context(), gCfg, pCtx, sa)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, err)
 		return
 	}
-	if err := a.cleanUpExpiredTokens(req.Context(), userServiceAccount, tokens); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Now fetch the list of tokens again and return the results
-	tokens, err = a.listTokens(req.Context(), userServiceAccount)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Add("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tokens); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, tokens)
 }
 
 func (a *App) handleTokenDelete(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	pCtx := backend.PluginConfigFromContext(req.Context())
+	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	user := backend.UserFromContext(req.Context())
+
+	tokenID, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
+	if err != nil || tokenID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid token ID")
 		return
 	}
 
-	// Make sure that the ID path parameter is a valid integer
-	tokenID, err := strconv.Atoi(req.PathValue("id"))
+	sa, err := a.findOrCreateServiceAccount(req.Context(), gCfg, pCtx, user)
 	if err != nil {
-		http.Error(w, "invalid token ID", http.StatusBadRequest)
+		writeAPIError(w, err)
 		return
 	}
 
-	// Get the requesting user's Service Account
-	userServiceAccount, err := a.findOrCreateServiceAccount(req.Context())
+	// Confirm the token actually belongs to this user's SA before deleting.
+	tokens, err := a.listTokens(req.Context(), gCfg, pCtx, sa)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get the current list of tokens to make sure that the requested token ID is actually one of the user's tokens
-	tokens, err := a.listTokens(req.Context(), userServiceAccount)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, err)
 		return
 	}
 	found := false
 	for _, t := range tokens {
-		if t.ID == int64(tokenID) {
+		if t.ID == tokenID {
 			found = true
 			break
 		}
 	}
 	if !found {
-		http.Error(w, "token not found in list of user's tokens", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "token not found")
 		return
 	}
 
-	// If we got a match, delete the token
-	if err := a.deleteToken(req.Context(), userServiceAccount, int64(tokenID)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := a.deleteToken(req.Context(), gCfg, pCtx, sa, tokenID); err != nil {
+		writeAPIError(w, err)
 		return
 	}
+	backend.Logger.Info("Token deleted",
+		"orgId", pCtx.OrgID, "userLogin", user.Login,
+		"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+		"tokenId", tokenID)
 
-	// And return the updated list of tokens after deletion
-	tokens, err = a.listTokens(req.Context(), userServiceAccount)
+	tokens, err = a.listTokens(req.Context(), gCfg, pCtx, sa)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, err)
 		return
 	}
-	w.Header().Add("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tokens); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, tokens)
 }
+
+// registerRoutes registers the plugin's resource HTTP handlers.
+func (a *App) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /token", a.handleTokenCreate)
+	mux.HandleFunc("GET /tokens", a.handleTokenList)
+	mux.HandleFunc("DELETE /tokens/{id}", a.handleTokenDelete)
+}
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
 
 type serviceAccount struct {
 	ID         int64  `json:"id"`
@@ -197,173 +199,172 @@ type token struct {
 	LastUsedAt *string `json:"lastUsedAt,omitempty"`
 }
 
-func (a *App) createToken(ctx context.Context, sa *serviceAccount, name string, secondsToLive int64) (*token, error) {
-	type body struct {
-		Name          string `json:"name"`
-		SecondsToLive int64  `json:"secondsToLive"`
-	}
-	createRequest := &apiRequest{
-		Method: http.MethodPost,
-		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens", sa.ID),
-		Body: body{
-			Name:          name,
-			SecondsToLive: secondsToLive,
-		},
-	}
-	var newToken token
-	if err := a.grafanaApiRequest(ctx, createRequest, &newToken); err != nil {
-		return nil, fmt.Errorf("error creating token: %w", err)
-	}
-	return &newToken, nil
+// ---------------------------------------------------------------------------
+// Service account + token operations
+// ---------------------------------------------------------------------------
+
+func serviceAccountName(login string) string {
+	return serviceAccountPrefix + login
 }
 
-func (a *App) listTokens(ctx context.Context, sa *serviceAccount) ([]token, error) {
-	listRequest := &apiRequest{
-		Method: http.MethodGet,
-		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens", sa.ID),
-	}
-	var listResponse []token
-	if err := a.grafanaApiRequest(ctx, listRequest, &listResponse); err != nil {
-		return nil, fmt.Errorf("error listing tokens: %w", err)
-	}
-	return listResponse, nil
-}
-
-func (a *App) deleteToken(ctx context.Context, sa *serviceAccount, tokenID int64) error {
-	deleteRequest := &apiRequest{
-		Method: http.MethodDelete,
-		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens/%d", sa.ID, tokenID),
-	}
-	if err := a.grafanaApiRequest(ctx, deleteRequest, nil); err != nil {
-		return fmt.Errorf("error deleting token: %w", err)
-	}
-	return nil
-}
-
-func (a *App) cleanUpExpiredTokens(ctx context.Context, sa *serviceAccount, tokens []token) error {
-
-	pcfg := backend.PluginConfigFromContext(ctx)
-
-	// Parse the desired cleanup grace period from an environment variable; defaults to 72 hours
-	gracePeriod, exists := os.LookupEnv("GF_PLUGIN_" + strings.ToUpper(strings.ReplaceAll(pcfg.PluginID, "-", "_")) + "_TOKEN_CLEANUP_GRACE_PERIOD")
-	if !exists {
-		gracePeriod = "72h"
-	}
-	gracePeriodDuration, err := time.ParseDuration(gracePeriod)
-	if err != nil {
-		return fmt.Errorf("error parsing cleanup expired tokens duration: %w", err)
-	}
-
-	// Loop through each token and delete those that are expired for longer than the cleanup grace period
-	for _, t := range tokens {
-		if t.HasExpired {
-			// If expiration is nil but token is marked as expired, just delete it
-			if t.Expiration == nil {
-				backend.Logger.Debug("deleting expired token with no expiration time", "orgId", sa.OrgID, "serviceAccount", sa.Name, "tokenId", t.ID)
-				if err := a.deleteToken(ctx, sa, t.ID); err != nil {
-					backend.Logger.Warn("error deleting expired token", "orgId", sa.OrgID, "serviceAccount", sa.Name, "tokenId", t.ID, "error", err)
-				}
-				continue
-			}
-			// Otherwise delete any that have been expired longer than the grace period
-			expirationTime, err := time.Parse(time.RFC3339, *t.Expiration)
-			if err != nil {
-				backend.Logger.Warn("error parsing token expiration time, skipping token cleanup", "orgId", sa.OrgID, "serviceAccount", sa.Name, "tokenId", t.ID, "error", err)
-				continue
-			}
-			if time.Since(expirationTime) > gracePeriodDuration {
-				backend.Logger.Debug("deleting expired token", "orgId", sa.OrgID, "serviceAccount", sa.Name, "tokenId", t.ID)
-				if err := a.deleteToken(ctx, sa, t.ID); err != nil {
-					backend.Logger.Warn("error deleting expired token", "orgId", sa.OrgID, "serviceAccount", sa.Name, "tokenId", t.ID, "error", err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (a *App) findOrCreateServiceAccount(ctx context.Context) (*serviceAccount, error) {
-
-	pcfg := backend.PluginConfigFromContext(ctx)
-	user := backend.UserFromContext(ctx)
-
+func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, user *backend.User) (*serviceAccount, error) {
 	if user == nil || user.Login == "" {
-		return nil, errors.New("this feature is unavailable for anonymous users; please sign in with a user account and try again")
+		return nil, httpError{status: http.StatusUnauthorized, err: errors.New("this feature is unavailable for anonymous users; please sign in with a user account and try again")}
+	}
+	name := serviceAccountName(user.Login)
+
+	sa, err := a.findServiceAccountByName(ctx, gCfg, pCtx, name)
+	if err != nil {
+		return nil, err
 	}
 
-	serviceAccountName := fmt.Sprintf("user:%s", user.Login)
-
-	// First try to search if the user's Service Account already exists
-
-	searchRequest := &apiRequest{
-		Method: http.MethodGet,
-		Path:   "/api/serviceaccounts/search",
-		Query: map[string]string{
-			"perpage": "100000",
-			"query":   serviceAccountName,
-		},
-	}
-
-	var searchResponse struct {
-		ServiceAccounts []serviceAccount `json:"serviceAccounts"`
-		TotalCount      int              `json:"totalCount"`
-	}
-
-	if err := a.grafanaApiRequest(ctx, searchRequest, &searchResponse); err != nil {
-		return nil, fmt.Errorf("error searching service accounts: %w", err)
-	}
-
-	saAttrs := map[string]any{
-		"name":       serviceAccountName,
+	desired := map[string]any{
+		"name":       name,
 		"role":       user.Role,
-		"orgId":      pcfg.OrgID,
 		"isDisabled": false,
 	}
 
-	// Loop through all of the results try to find a match for the user (exact Login and OrgID of the requestor)
-	for i, sa := range searchResponse.ServiceAccounts {
-		if sa.Name == serviceAccountName && sa.OrgID == pcfg.OrgID {
-
-			// If the Service Account still has the correct role and is enabled, just return it
-			if sa.Role == user.Role && !sa.IsDisabled {
-				return &searchResponse.ServiceAccounts[i], nil
-			}
-
-			// Otherwise, update it so it is correct first before returning it
-			if err := a.setGrafanaUserOrgContext(ctx); err != nil {
-				return nil, err
-			}
-			patchRequest := &apiRequest{
-				Method: http.MethodPatch,
-				Path:   fmt.Sprintf("/api/serviceaccounts/%d", sa.ID),
-				Body:   saAttrs,
-			}
-			var sa serviceAccount
-			if err := a.grafanaApiRequest(ctx, patchRequest, &sa); err != nil {
-				return nil, fmt.Errorf("error patching service account: %w", err)
-			}
-			return &sa, nil
-
+	if sa != nil {
+		if sa.Role == user.Role && !sa.IsDisabled {
+			return sa, nil
 		}
+		// Role changed or SA was disabled: patch it back to the desired
+		// state. Tokens issued by a service account inherit the SA's
+		// current permissions on each request, so a role downgrade
+		// takes effect immediately for new requests using existing
+		// tokens. (Grafana evaluates permissions at request time, not
+		// at token issue time, so no token revocation is necessary.)
+		patchReq := &apiRequest{
+			Method: http.MethodPatch,
+			Path:   fmt.Sprintf("/api/serviceaccounts/%d", sa.ID),
+			Body:   desired,
+		}
+		if err := a.grafanaAPIRequestWithOrgSwitch(ctx, gCfg, pCtx, patchReq, sa); err != nil {
+			return nil, fmt.Errorf("updating service account: %w", err)
+		}
+		backend.Logger.Info("Service account reconciled",
+			"orgId", pCtx.OrgID, "userLogin", user.Login,
+			"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+			"role", sa.Role)
+		return sa, nil
 	}
 
-	// If there was no match, create a new one
-	if err := a.setGrafanaUserOrgContext(ctx); err != nil {
-		return nil, err
+	// Create a new SA for the user.
+	createBody := map[string]any{
+		"name":       name,
+		"role":       user.Role,
+		"isDisabled": false,
 	}
-	var sa serviceAccount
-	createRequest := &apiRequest{
+	createReq := &apiRequest{
 		Method: http.MethodPost,
 		Path:   "/api/serviceaccounts",
-		Body:   saAttrs,
+		Body:   createBody,
 	}
-	if err := a.grafanaApiRequest(ctx, createRequest, &sa); err != nil {
-		return nil, fmt.Errorf("error creating service account: %w", err)
+	var created serviceAccount
+	if err := a.grafanaAPIRequestWithOrgSwitch(ctx, gCfg, pCtx, createReq, &created); err != nil {
+		// Race: another concurrent request may have created the SA
+		// after our search returned empty. Retry the lookup once.
+		if existing, lookupErr := a.findServiceAccountByName(ctx, gCfg, pCtx, name); lookupErr == nil && existing != nil {
+			return existing, nil
+		}
+		return nil, fmt.Errorf("creating service account: %w", err)
 	}
-	return &sa, nil
-
+	backend.Logger.Info("Service account created",
+		"orgId", pCtx.OrgID, "userLogin", user.Login,
+		"serviceAccountId", created.ID, "serviceAccountName", created.Name,
+		"role", created.Role)
+	return &created, nil
 }
+
+// findServiceAccountByName paginates through /api/serviceaccounts/search
+// looking for an exact (Name, OrgID) match. Returns (nil, nil) when not
+// found.
+func (a *App) findServiceAccountByName(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, name string) (*serviceAccount, error) {
+	const perPage = 100
+	for page := 1; page <= 100; page++ {
+		searchReq := &apiRequest{
+			Method: http.MethodGet,
+			Path:   "/api/serviceaccounts/search",
+			Query: map[string]string{
+				"perpage": strconv.Itoa(perPage),
+				"page":    strconv.Itoa(page),
+				// query is fuzzy/substring; we re-verify exact match below
+				"query": name,
+			},
+		}
+		var resp struct {
+			ServiceAccounts []serviceAccount `json:"serviceAccounts"`
+			TotalCount      int              `json:"totalCount"`
+			Page            int              `json:"page"`
+			PerPage         int              `json:"perPage"`
+		}
+		if err := a.grafanaAPIRequestWithOrgSwitch(ctx, gCfg, pCtx, searchReq, &resp); err != nil {
+			return nil, fmt.Errorf("searching service accounts: %w", err)
+		}
+		for i := range resp.ServiceAccounts {
+			sa := &resp.ServiceAccounts[i]
+			if sa.Name == name && sa.OrgID == pCtx.OrgID {
+				return sa, nil
+			}
+		}
+		if len(resp.ServiceAccounts) < perPage {
+			return nil, nil
+		}
+	}
+	return nil, errors.New("service account search exceeded pagination limit")
+}
+
+func (a *App) createToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, name string, secondsToLive int64) (*token, error) {
+	body := map[string]any{"name": name, "secondsToLive": secondsToLive}
+	req := &apiRequest{
+		Method: http.MethodPost,
+		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens", sa.ID),
+		Body:   body,
+	}
+	var t token
+	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, &t); err != nil {
+		return nil, fmt.Errorf("creating token: %w", err)
+	}
+	return &t, nil
+}
+
+func (a *App) listTokens(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount) ([]token, error) {
+	req := &apiRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens", sa.ID),
+	}
+	var out []token
+	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, &out); err != nil {
+		return nil, fmt.Errorf("listing tokens: %w", err)
+	}
+	return out, nil
+}
+
+func (a *App) deleteToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, tokenID int64) error {
+	req := &apiRequest{
+		Method: http.MethodDelete,
+		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens/%d", sa.ID, tokenID),
+	}
+	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, nil); err != nil {
+		return fmt.Errorf("deleting token: %w", err)
+	}
+	return nil
+}
+
+func (a *App) deleteServiceAccount(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, saID int64) error {
+	req := &apiRequest{
+		Method: http.MethodDelete,
+		Path:   fmt.Sprintf("/api/serviceaccounts/%d", saID),
+	}
+	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, nil); err != nil {
+		return fmt.Errorf("deleting service account: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Grafana API client
+// ---------------------------------------------------------------------------
 
 type apiRequest struct {
 	Method string
@@ -372,23 +373,23 @@ type apiRequest struct {
 	Body   any
 }
 
-func (a *App) grafanaApiRequest(ctx context.Context, attrs *apiRequest, out any) error {
+func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
+	if gCfg == nil {
+		return errors.New("missing Grafana config in context")
+	}
+	if pCtx.PluginID == "" {
+		pCtx = a.pluginCtx
+	}
 
-	gcfg := backend.GrafanaConfigFromContext(ctx)
-
-	// Get the Grafana URL from the request context
-	grafanaAppURL, err := gcfg.AppURL()
+	appURL, err := gCfg.AppURL()
+	if err != nil {
+		return err
+	}
+	reqURL, err := url.JoinPath(appURL, attrs.Path)
 	if err != nil {
 		return err
 	}
 
-	// Join the Grafana URL with the requested path
-	reqURL, err := url.JoinPath(grafanaAppURL, attrs.Path)
-	if err != nil {
-		return err
-	}
-
-	// If a Body was passed, marshall it and create a reader for use with the request
 	var bodyReader io.Reader
 	if attrs.Body != nil {
 		raw, err := json.Marshal(attrs.Body)
@@ -398,13 +399,10 @@ func (a *App) grafanaApiRequest(ctx context.Context, attrs *apiRequest, out any)
 		bodyReader = bytes.NewReader(raw)
 	}
 
-	// Create the new HTTP request
-	req, err := http.NewRequest(attrs.Method, reqURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, attrs.Method, reqURL, bodyReader)
 	if err != nil {
 		return err
 	}
-
-	// If any query parameters were passed, add them to the request URL
 	if attrs.Query != nil {
 		q := req.URL.Query()
 		for k, v := range attrs.Query {
@@ -412,25 +410,17 @@ func (a *App) grafanaApiRequest(ctx context.Context, attrs *apiRequest, out any)
 		}
 		req.URL.RawQuery = q.Encode()
 	}
-
-	// Set request headers
-
 	req.Header.Set("Accept", "application/json")
-
-	// Set the Content-Type header if a body was passed
 	if attrs.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-
-	// Set the Authorization header
-	if err := a.setGrafanaAuthHeader(ctx, req); err != nil {
+	if err := a.setGrafanaAuthHeader(pCtx, req); err != nil {
 		return err
 	}
 
-	// Send the request, get its body, and Unmarshal it into the provided out parameter
-
-	backend.Logger.Debug("sending Grafana API request", "method", attrs.Method, "url", reqURL)
-	resp, err := http.DefaultClient.Do(req)
+	backend.Logger.Debug("Grafana API request",
+		"method", attrs.Method, "url", reqURL, "orgId", pCtx.OrgID)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -441,11 +431,9 @@ func (a *App) grafanaApiRequest(ctx context.Context, attrs *apiRequest, out any)
 	if err != nil {
 		return err
 	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("received %s when sending request to Grafana API: %s", resp.Status, string(raw))
+		return httpError{status: resp.StatusCode, err: fmt.Errorf("%s %s: %s", attrs.Method, attrs.Path, strings.TrimSpace(string(raw)))}
 	}
-
 	if out == nil || len(raw) == 0 {
 		return nil
 	}
@@ -453,86 +441,109 @@ func (a *App) grafanaApiRequest(ctx context.Context, attrs *apiRequest, out any)
 		return fmt.Errorf("parsing %s response: %w", attrs.Path, err)
 	}
 	return nil
+
 }
 
-func (a *App) setGrafanaUserOrgContext(ctx context.Context) error {
+// grafanaAPIRequestWithOrgSwitch wraps grafanaAPIRequest with a locking Basic Auth user org switch
+// when necessary to ensure that the request is executed in the correct org context. This is
+// required for any actions that involve searching, creating, or updating Service Accounts, as the
+// Service Account API unfortunately does not respect the X-Grafana-Org-Id request header.
+// See https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/examples/create-api-tokens-for-org/
+// for more information.
+func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
+	if gCfg == nil {
+		return errors.New("missing Grafana config in context")
+	}
+	if pCtx.PluginID == "" {
+		pCtx = a.pluginCtx
+	}
 
-	pcfg := backend.PluginConfigFromContext(ctx)
-	gcfg := backend.GrafanaConfigFromContext(ctx)
-
-	// If externalServiceAccounts feature is enabled and the request is coming from OrgID 1, see if we are using the plugin's service account
-	// Ideally, support for all organizations will be added and we can make this the default
-	if pcfg.OrgID == 1 && gcfg.FeatureToggles().IsEnabled("externalServiceAccounts") {
-		// Get the service account token
-		_, err := gcfg.PluginAppClientSecret()
-		if err == nil {
-			backend.Logger.Debug("plugin service account token in use, skipping switching user organization context")
-			return nil
+	requiresSwitch := true
+	if pCtx.AppInstanceSettings != nil {
+		if t, ok := pCtx.AppInstanceSettings.DecryptedSecureJSONData["token"]; ok && t != "" {
+			// Org-scoped SA token is already pinned to its org.
+			requiresSwitch = false
+		}
+	} else {
+		if _, _, ok := a.backendBasicAuth(); !ok {
+			return fmt.Errorf("missing authentication credentials for orgId %d; please contact an administrator", pCtx.OrgID)
 		}
 	}
 
-	// Similarly, if we are using an Organization service account token, we do not need to switch the user organization context
-	_, tokenExists := pcfg.AppInstanceSettings.DecryptedSecureJSONData["token"]
-	if tokenExists {
-		backend.Logger.Debug("organization service account token in use, skipping switching user organization context")
-		return nil
+	// If the plugin's auth mode does not require us to switch the Basic Auth
+	// user's session, we can just make the request directly without locking.
+	if !requiresSwitch {
+		return a.grafanaAPIRequest(ctx, gCfg, pCtx, attrs, out)
 	}
 
-	// Otherwise, we need to switch the user organization context to ensure that the API calls we make are in the context of the requesting user's organization
+	// Otherwise, we need to wrap this request in a lock, switch the Basic Auth
+	// user's session, execute the request, and then release the lock.
+	// This will help to prevent race conditions with any other requests that
+	// might be executed by other users at the same time.
 
-	useOrgIdRequest := &apiRequest{
+	basicAuthOrgSwitchMutex.Lock()
+	defer basicAuthOrgSwitchMutex.Unlock()
+
+	req := &apiRequest{
 		Method: http.MethodPost,
-		Path:   fmt.Sprintf("/api/user/using/%d", pcfg.OrgID),
+		Path:   fmt.Sprintf("/api/user/using/%d", pCtx.OrgID),
+	}
+	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, nil); err != nil {
+		return fmt.Errorf("switching user org context to %d: %w", pCtx.OrgID, err)
 	}
 
-	if err := a.grafanaApiRequest(ctx, useOrgIdRequest, nil); err != nil {
-		return fmt.Errorf("error switching user organization context: %w", err)
-	}
-
-	return nil
-
+	return a.grafanaAPIRequest(ctx, gCfg, pCtx, attrs, out)
 }
 
-func (a *App) setGrafanaAuthHeader(ctx context.Context, req *http.Request) error {
-
-	pcfg := backend.PluginConfigFromContext(ctx)
-	gcfg := backend.GrafanaConfigFromContext(ctx)
-
-	// If externalServiceAccounts feature is enabled and the request is coming from OrgID 1, use the plugin's service account
-	// Ideally, support for all organizations will be added and we can make this the default and/or only authentication method
-	if pcfg.OrgID == 1 && gcfg.FeatureToggles().IsEnabled("externalServiceAccounts") {
-		// Get the service account token
-		saToken, err := gcfg.PluginAppClientSecret()
-		if err == nil {
-			req.Header.Add("Authorization", "Bearer "+saToken)
-			backend.Logger.Debug("using plugin service account token")
+func (a *App) setGrafanaAuthHeader(pCtx backend.PluginContext, req *http.Request) error {
+	// Org-scoped service account token configured via the plugin's settings page.
+	if pCtx.AppInstanceSettings != nil {
+		if t, ok := pCtx.AppInstanceSettings.DecryptedSecureJSONData["token"]; ok && t != "" {
+			req.Header.Set("Authorization", "Bearer "+t)
 			return nil
 		}
-		backend.Logger.Warn("error trying to retrieve plugin service account token, please ensure you have enabled the externalServiceAccounts feature and enabled auth.managed_service_accounts_enabled", "error", err)
 	}
 
-	orgToken, tokenExists := pcfg.AppInstanceSettings.DecryptedSecureJSONData["token"]
-	if tokenExists {
-		req.Header.Add("Authorization", "Bearer "+string(orgToken))
-		backend.Logger.Debug("using Organization service account token", "orgId", pcfg.OrgID)
-		return nil
-	}
-
-	username, usernameExists := os.LookupEnv("GF_PLUGIN_" + strings.ToUpper(strings.ReplaceAll(pcfg.PluginID, "-", "_")) + "_BACKEND_USERNAME")
-	password, passwordExists := os.LookupEnv("GF_PLUGIN_" + strings.ToUpper(strings.ReplaceAll(pcfg.PluginID, "-", "_")) + "_BACKEND_PASSWORD")
-	if usernameExists && passwordExists {
+	// Basic Auth (GrafanaAdmin) fallback.
+	if username, password, ok := a.backendBasicAuth(); ok {
 		req.SetBasicAuth(username, password)
-		backend.Logger.Debug("using basic auth", "username", username)
 		return nil
 	}
 
-	return errors.New("no Grafana API credentials found")
-
+	return fmt.Errorf("no Grafana API credentials configured for this plugin instance in orgId %d", pCtx.OrgID)
 }
 
-// registerRoutes takes a *http.ServeMux and registers some HTTP handlers.
-func (a *App) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/token", a.handleTokenCreate)
-	mux.HandleFunc("/tokens", a.handleTokenList)
-	mux.HandleFunc("/tokens/{id}", a.handleTokenDelete)
+// ---------------------------------------------------------------------------
+// Response helpers
+// ---------------------------------------------------------------------------
+
+// httpError is an internal error type that lets handlers map upstream
+// Grafana status codes through to the client cleanly.
+type httpError struct {
+	status int
+	err    error
+}
+
+func (e httpError) Error() string { return e.err.Error() }
+func (e httpError) Unwrap() error { return e.err }
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		backend.Logger.Warn("Failed to encode response", "error", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, format string, args ...any) {
+	writeJSON(w, status, map[string]string{"error": fmt.Sprintf(format, args...)})
+}
+
+func writeAPIError(w http.ResponseWriter, err error) {
+	var he httpError
+	if errors.As(err, &he) {
+		writeError(w, he.status, "%s", he.err.Error())
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "%s", err.Error())
 }

@@ -1,158 +1,180 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Alert, Button, Spinner, Stack, Text, useStyles2 } from '@grafana/ui';
+import { Alert, Button, LoadingPlaceholder, Stack, Text, useStyles2 } from '@grafana/ui';
 import { PluginPage, getBackendSrv } from '@grafana/runtime';
+import { lastValueFrom } from 'rxjs';
+import { PLUGIN_RESOURCES_URL } from '../constants';
+
+/**
+ * "Authorize" page.
+ * Provides an OAuth-like /authorize endpoint that handles token generation
+ * and callback to the CLI's loopback service.
+ */
+
+type Status = 'init' | 'working' | 'submitting' | 'done' | 'error';
+
+const MIN_PORT = 1;
+const MAX_PORT = 65535;
+const FORM_ID = 'cli-callback-form';
+
+interface AuthorizeParams {
+  state: string;
+  callbackPort: number;
+  tokenName: string;
+  secondsToLive?: number;
+}
+
+const parseParams = (): { params: AuthorizeParams | null; error: string | null } => {
+  const search = new URLSearchParams(window.location.search);
+  const state = search.get('state');
+  const port = search.get('callback_port');
+  const nameParam = search.get('name');
+  const ttlParam = search.get('secondsToLive');
+
+  if (!state || !port) {
+    return { params: null, error: 'Missing required parameters (state, callback_port).' };
+  }
+  const portNum = Number(port);
+  if (!Number.isInteger(portNum) || portNum < MIN_PORT || portNum > MAX_PORT) {
+    return { params: null, error: `callback_port must be an integer between ${MIN_PORT} and ${MAX_PORT}.` };
+  }
+  let secondsToLive: number | undefined;
+  if (ttlParam) {
+    const ttl = Number(ttlParam);
+    if (!Number.isInteger(ttl) || ttl <= 0) {
+      return { params: null, error: 'secondsToLive must be a positive integer.' };
+    }
+    secondsToLive = ttl;
+  }
+  return {
+    params: {
+      state,
+      callbackPort: portNum,
+      tokenName: nameParam || `cli-login-${new Date().toISOString()}`,
+      secondsToLive,
+    },
+    error: null,
+  };
+};
 
 export default function AuthorizePage() {
   const styles = useStyles2(getStyles);
+  const { params, error: parseError } = useMemo(() => parseParams(), []);
 
-  // Extract plugin ID from URL
-  const getPluginId = () => {
-    const matches = window.location.pathname.match(/\/api\/plugins\/([^\/]+)\//);
-    return matches ? matches[1] : 'joshuagrisham-gcxonpremoauth-app';
-  };
-  const pluginId = getPluginId();
+  const [status, setStatus] = useState<Status>(parseError ? 'error' : 'init');
+  const [message, setMessage] = useState<string>(parseError ?? '');
+  const [tokenKey, setTokenKey] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const hasStartedRef = useRef(false);
 
-  const [loginStatus, setLoginStatus] =
-    useState<'init' | 'working' | 'done' | 'error'>('init');
-
-  const [message, setMessage] = useState('Signing in to Grafana...');
-  const [nonce, setNonce] = useState<string | null>(null);
-  const [callbackPort, setCallbackPort] = useState<number | null>(null);
-  const [tokenName, setTokenName] = useState<string | null>(null);
-  const [secondsToLive, setSecondsToLive] = useState<number | null>(null);
-
-  // Parse URL params
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-
-    const n = params.get('nonce');
-    const p = params.get('callback_port');
-    const nameParam = params.get('name');
-    const ttl = params.get('secondsToLive');
-  
-    if (!n || !p) {
-      setLoginStatus('error');
-      setMessage('missing required parameters');
+    if (!params || hasStartedRef.current || status !== 'init') {
       return;
     }
-
-    setNonce(n);
-    setCallbackPort(Number(p));
-    setTokenName(nameParam || `cli-login-${new Date().toISOString()}`);
-
-    if (ttl) {
-      const ttlNum = Number(ttl);
-      if (!Number.isNaN(ttlNum) && ttlNum > 0) {
-        setSecondsToLive(ttlNum);
-      }
-    }
-  }, []);
-
-  // Main login flow
-  useEffect(() => {
-    if (!nonce || !callbackPort || !tokenName) {
-      return;
-    }
+    hasStartedRef.current = true;
 
     const run = async () => {
       try {
-        setLoginStatus('working');
+        setStatus('working');
         setMessage('Generating token...');
 
-        // Generate the token
-        const payload: any = { name: tokenName };
-        if (secondsToLive) {
-          payload.secondsToLive = secondsToLive;
+        const payload: Record<string, unknown> = { name: params.tokenName };
+        if (params.secondsToLive) {
+          payload.secondsToLive = params.secondsToLive;
         }
-        const result = await getBackendSrv().post(
-          `/api/plugins/${pluginId}/resources/token`,
-          payload
-        );
-        const { key } = result;
-
-        setMessage('Success! Redirecting...');
-
-        // Create a form and POST it to the CLI's local callback endpoint
-        // This is more secure than fetch() because the token goes directly
-        // from server to server, and the CLI returns a success page
-        const form = document.createElement('form');
-        form.id = 'cli-callback-form';
-        form.method = 'POST';
-        form.action = `http://127.0.0.1:${callbackPort}/callback`;
-
-        const nonceInput = document.createElement('input');
-        nonceInput.type = 'hidden';
-        nonceInput.name = 'nonce';
-        nonceInput.value = nonce;
-        form.appendChild(nonceInput);
-
-        const tokenInput = document.createElement('input');
-        tokenInput.type = 'hidden';
-        tokenInput.name = 'token';
-        tokenInput.value = key;
-        form.appendChild(tokenInput);
-
-        // Submit the form - this will redirect to the CLI's callback
-        // The CLI can then respond with a success/error page
-        document.body.appendChild(form);
-        form.submit();
-
-        // If we get here, the form submission succeeded
-        setLoginStatus('done');
-        setMessage('Done! <a href="javascript:document.getElementById(\'cli-callback-form\').submit()">Click here</a> if you are not redirected automatically.');
-      } catch (err: any) {
+        const response = await getBackendSrv().fetch<{ key: string; warnings?: string[] }>({
+          url: `${PLUGIN_RESOURCES_URL}/token`,
+          method: 'POST',
+          data: payload,
+        });
+        const result = await lastValueFrom(response);
+        const key = result.data?.key;
+        if (!key) {
+          throw new Error('Backend did not return a token key.');
+        }
+        setTokenKey(key);
+        setMessage('Sending token back to gcx...');
+        setStatus('submitting');
+      } catch (err: unknown) {
         console.error(err);
-        setLoginStatus('error');
-        setMessage(err.message || 'Sign-in failed');
+        setStatus('error');
+        setMessage(err instanceof Error ? err.message : 'Sign-in failed');
       }
     };
+    void run();
+  }, [params, status]);
 
-    run();
-  }, [nonce, callbackPort, tokenName, secondsToLive, pluginId]);
+  // Auto-submit the form once the token is ready. The token is delivered
+  // to the CLI by a regular form submission so the CLI can render its own
+  // success/error page.
+  useEffect(() => {
+    if (status === 'submitting' && formRef.current) {
+      formRef.current.submit();
+      setStatus('done');
+    }
+  }, [status]);
 
   const retry = () => window.location.reload();
+  const manualSubmit = () => formRef.current?.submit();
 
   return (
     <PluginPage
-      renderTitle={() => <Text variant="h2">Sign in to Grafana</Text>}
-      subTitle="Generating user login token..."
+      renderTitle={() => <Text variant="h2">Sign in to gcx</Text>}
+      subTitle="Generating a CLI login token..."
     >
       <div className={styles.container}>
-        {loginStatus === 'working' && (
+        {(status === 'working' || status === 'submitting') && (
           <Stack direction="row" alignItems="center" gap={2}>
-            <Spinner />
-            <Text>{message}</Text>
+            <LoadingPlaceholder text={message} />
           </Stack>
         )}
 
-        {loginStatus === 'done' && (
+        {status === 'done' && params && (
           <Alert title="Success" severity="success">
             <Stack direction="column" gap={2}>
-              <Text>{message}</Text>
-              <Button variant="primary" onClick={() => window.close()}>
-                Close
-              </Button>
+              <Text>
+                A token was generated and posted to the gcx CLI on{' '}
+                <code>{`http://127.0.0.1:${params.callbackPort}/callback`}</code>. You can close this window.
+              </Text>
+              <Text variant="bodySmall" color="secondary">
+                Not redirected automatically? Click below to resend the token to the CLI.
+              </Text>
+              <Stack direction="row" gap={2}>
+                <Button variant="primary" onClick={manualSubmit}>
+                  Resend to CLI
+                </Button>
+                <Button variant="secondary" onClick={() => window.close()}>
+                  Close window
+                </Button>
+              </Stack>
             </Stack>
           </Alert>
         )}
 
-        {loginStatus === 'error' && (
+        {status === 'error' && (
           <div className={styles.errorBox}>
-            <Alert title="Login failed" severity="error">
+            <Alert title="Sign-in failed" severity="error">
               <Text>{message}</Text>
             </Alert>
-
-            <Button
-              variant="secondary"
-              size="md"
-              className={styles.retryButton}
-              onClick={retry}
-            >
+            <Button variant="secondary" size="md" className={styles.retryButton} onClick={retry}>
               Retry
             </Button>
           </div>
+        )}
+
+        {/* Hidden POST form posted to the CLI's loopback callback. */}
+        {tokenKey && params && (
+          <form
+            ref={formRef}
+            id={FORM_ID}
+            method="POST"
+            action={`http://127.0.0.1:${params.callbackPort}/callback`}
+            style={{ display: 'none' }}
+          >
+            <input type="hidden" name="state" value={params.state} />
+            <input type="hidden" name="token" value={tokenKey} />
+          </form>
         )}
       </div>
     </PluginPage>
