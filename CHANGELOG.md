@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.0 (Unreleased)
+## 0.1.0 (2026-05-29)
 
-Initial release of the gcx On-Prem OAuth Grafana app plugin.
+Initial preview release of the gcx On-Prem OAuth Grafana app plugin.
 
 ### Features
 
