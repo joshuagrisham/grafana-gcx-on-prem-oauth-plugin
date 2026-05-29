@@ -6,6 +6,12 @@ import { PluginPage, config } from '@grafana/runtime';
 import { prefixRoute } from '../utils/utils.routing';
 import { PLUGIN_ID, ROUTES } from '../constants';
 
+/**
+ * "Menu" page.
+ * Renders a list of available actions and pages for the user, with links
+ * to manage tokens, client setup, and plugin configuration.
+ */
+
 interface MenuLink {
   label: string;
   description: string;
@@ -25,10 +31,10 @@ const MENU_LINKS: MenuLink[] = [
     icon: 'key-skeleton-alt',
   },
   {
-    label: 'Set me up',
+    label: 'Client setup',
     description:
       'Generate ready-to-copy commands to configure gcx, cURL, and the Grafana MCP server.',
-    href: prefixRoute(ROUTES.SetMeUp),
+    href: prefixRoute(ROUTES.ClientSetup),
     icon: 'rocket',
   },
   {

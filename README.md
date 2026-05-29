@@ -1,136 +1,184 @@
-# Grafana app plugin template
+# Grafana gcx On-Prem OAuth Plugin
 
-This template is a starting point for building an app plugin for Grafana.
+![Marketplace](https://img.shields.io/badge/dynamic/json?logo=grafana&query=$.version&url=https://grafana.com/api/plugins/joshuagrisham-gcxonpremoauth-app&label=Marketplace&prefix=v&color=F47A20)
+![Downloads](https://img.shields.io/badge/dynamic/json?logo=grafana&query=$.downloads&url=https://grafana.com/api/plugins/joshuagrisham-gcxonpremoauth-app&label=Downloads&color=F47A20)
+![Grafana Dependency](https://img.shields.io/badge/dynamic/json?logo=grafana&query=$.grafanaDependency&url=https://grafana.com/api/plugins/joshuagrisham-gcxonpremoauth-app&label=Grafana&color=F47A20)
 
-## What are Grafana app plugins?
+The gcx On-Prem OAuth app brings self-service, per-user API token management to on-premises Grafana installations, and exposes an OAuth-style authorization endpoint that command-line tools such as [gcx](https://github.com/joshuagrisham/gcx) can use to sign users in through their browser.
 
-App plugins can let you create a custom out-of-the-box monitoring experience by custom pages, nested data sources and panel plugins.
+## Overview
 
-## Get started
+Currently, the only way to use [`gcx`](https://github.com/grafana/gcx), [`mcp-grafana`](https://github.com/grafana/mcp-grafana), and other client tools with a self-managed Grafana instance is to provision a service account and create a token for it. Sharing long-lived organization service account tokens with end users is risky: tokens leak, can't be revoked per person, and don't carry the user's own role or audit identity.
 
-### Backend
+Even if you install the [Grafana Assistant](https://grafana.com/docs/grafana-cloud/machine-learning/assistant/) plugin and connect it to a Grafana Cloud stack, self-managed users still can't sign in with `gcx`. Refer to [grafana/grafana#123217](https://github.com/grafana/grafana/issues/123217) for an example. Even if this works, it incurs additional cost (refer to [Grafana Assistant pricing](https://grafana.com/pricing/#grafana-assistant)).
 
-1. Update [Grafana plugin SDK for Go](https://grafana.com/developers/plugin-tools/key-concepts/backend-plugins/grafana-plugin-sdk-for-go) dependency to the latest minor version:
+The gcx On-Prem OAuth app solves these problems by giving every Grafana user a dedicated service account they fully control, plus a loopback-based authorization flow that mints those tokens without ever asking the user to paste credentials into a terminal.
 
-   ```bash
-   go get -u github.com/grafana/grafana-plugin-sdk-go
-   go mod tidy
-   ```
+The app provides:
 
-2. Build plugin backend binaries for Linux, Windows and Darwin:
+- A **Manage user tokens** page where each signed-in user can create, list, and revoke API tokens scoped to their own service account.
+- A **Client setup** page that generates ready-to-copy configuration snippets for [gcx](https://github.com/joshuagrisham/gcx), `curl`, and the [Grafana MCP server](https://github.com/grafana/mcp-grafana), pre-filled with your server URL and current organization.
+- An **OAuth-style `/authorize` endpoint** modeled on the OAuth 2.0 authorization-code flow with `state` for CSRF protection, designed for loopback redirect URIs used by native and CLI clients.
+- A **backend service** providing the necessary endpoints for creating and managing the per-user service accounts and their tokens.
+- A **background cleanup process** that mirrors user role changes onto the corresponding service accounts, prunes expired tokens after a configurable grace period, and removes service accounts that belong to deleted or disabled users.
 
-   ```bash
-   mage -v
-   ```
+![Plugin menu](https://raw.githubusercontent.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/main/src/img/screenshots/menu.png)
 
-3. List all available Mage targets for additional commands:
+### How users interact with it
 
-   ```bash
-   mage -l
-   ```
+End users can choose between managing their tokens from the **Manage user tokens** page in the UI, or running `gcx login` from a terminal. The CLI flow opens a browser tab on the plugin's **Authorize** page, confirms that the user is signed in to the target organization, and then uses the plugin's backend to provision the user's own service account and a fresh token. That token is delivered back to the CLI over the loopback redirect. The token belongs to the user's own service account, inherits the user's organization role, and can be revoked from the **Manage user tokens** page at any time.
 
-### Frontend
+## Requirements
 
-1. Install dependencies
+- This plugin has been tested with Grafana >= **12.3.0**, but in theory it should work with any version since **11.0.0** (due to the dependency on `react-router`).
 
-   ```bash
-   npm install
-   ```
+## Getting started
 
-2. Build plugin in development mode and run in watch mode
+### Install the plugin
 
-   ```bash
-   npm run dev
-   ```
+This plugin is unsigned during initial development. To install from a packaged zip:
 
-3. Build plugin in production mode
+```bash
+# extract into Grafana's plugin directory (default /var/lib/grafana/plugins)
+unzip joshuagrisham-gcxonpremoauth-app-<version>.zip -d /var/lib/grafana/plugins/
+# allow the unsigned plugin
+echo "GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=joshuagrisham-gcxonpremoauth-app" >> /etc/default/grafana-server
+systemctl restart grafana-server
+```
 
-   ```bash
-   npm run build
-   ```
+Install from the Grafana plugin catalog:
 
-4. Run the tests (using Jest)
+```bash
+grafana-cli plugins install joshuagrisham-gcxonpremoauth-app
+```
 
-   ```bash
-   # Runs the tests and watches for changes, requires git init first
-   npm run test
+Or, in the Grafana UI, go to **Administration > Plugins**, search for `gcx On-Prem OAuth`, and select **Install**.
 
-   # Exits after running all the tests
-   npm run test:ci
-   ```
+Restart Grafana after installation.
 
-5. Spin up a Grafana instance and run the plugin inside it (using Docker)
+### Configure the backend authentication mode
 
-   ```bash
-   npm run server
-   ```
+The plugin's backend needs a way to call the Grafana HTTP API on behalf of users. You can configure this in one of two ways.
 
-6. Run the E2E tests (using Playwright)
+#### Per-organization service account token
 
-   ```bash
-   # Spins up a Grafana instance first that we tests against
-   npm run server
+1. In each Grafana organization, create a service account with the **Admin** role and mint a token for it.
+2. Go to **More apps > gcx On-Prem OAuth > Plugin configuration** and paste the token under **Organization Service Account Token**.
 
-   # If you wish to start a certain Grafana version. If not specified will use latest by default
-   GRAFANA_VERSION=11.3.0 npm run server
+#### Basic Auth with a `GrafanaAdmin` user
 
-   # Starts the tests
-   npm run e2e
-   ```
+For multi-organization installs where you don't want to provision a service account in every organization:
 
-7. Run the linter
+1. Enable Basic Auth (`auth.basic.enabled = true`, or `GF_AUTH_BASIC_ENABLED=true`).
+2. Add `joshuagrisham-gcxonpremoauth-app` to Grafana's `forward_host_env_vars` setting.
+3. Set the following environment variables on the Grafana server process:
 
    ```bash
-   npm run lint
-
-   # or
-
-   npm run lint:fix
+   GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_USERNAME=<grafana-admin-user>
+   GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_BACKEND_PASSWORD=<grafana-admin-password>
    ```
 
-# Distributing your plugin
+### Sign in with gcx
 
-When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
+Once the plugin is installed and configured, users can sign in from their terminal:
 
-_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
+```bash
+gcx login \
+  --context my-grafana \
+  --server https://grafana.example.com \
+  --org-id 1
+```
 
-## Initial steps
+This opens the Grafana authorization page in the user's browser. After the user approves, `gcx` stores the minted token under the named context.
 
-Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria) documentation carefully.
+![CLI sign-in success](https://raw.githubusercontent.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/main/src/img/screenshots/cli-connected.png)
 
-`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
+CLI sign-in currently requires the [`joshuagrisham/gcx`](https://github.com/joshuagrisham/gcx) fork of `gcx`.
 
-Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/legal/plugins/#what-are-the-different-classifications-of-plugins) documentation to understand the differences between the types of signature level.
+### Manage user tokens
 
-1. Create a [Grafana Cloud account](https://grafana.com/signup).
-2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
-   - _You can find the plugin ID in the `plugin.json` file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
-3. Create a Grafana Cloud API key with the `PluginPublisher` role.
-4. Keep a record of this API key as it will be required for signing a plugin
+Each user can manage their own tokens from the **Manage user tokens** page in the Grafana UI. Tokens can be created with a custom name and TTL, listed, and revoked individually.
 
-## Signing a plugin
+![Manage user tokens](https://raw.githubusercontent.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/main/src/img/screenshots/manage-user-tokens.png)
 
-### Using Github actions release workflow
+## Configuration
 
-If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
+### Plugin settings
 
-1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
-2. Click "New repository secret"
-3. Name the secret "GRAFANA_API_KEY"
-4. Paste your Grafana Cloud API key in the Secret field
-5. Click "Add secret"
+The **More apps > gcx On-Prem OAuth > Plugin configuration** page requires the Grafana **Admin** role and exposes the following settings:
 
-#### Push a version tag
+- **Organization Service Account Token** — the token used by the backend authentication mode described in [Per-organization service account token](#per-organization-service-account-token).
+- Per-organization overrides for the tunable values listed in [Tunable environment variables](#tunable-environment-variables).
 
-To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
+### Tunable environment variables
 
-1. Run `npm version <major|minor|patch>`
-2. Run `git push origin main --follow-tags`
+The plugin ID `joshuagrisham-gcxonpremoauth-app` must appear in Grafana's `forward_host_env_vars` setting so the plugin can read environment variables from the Grafana server process.
 
-## Learn more
+| Variable                                                                | Default   | Description                                                        |
+| ----------------------------------------------------------------------- | --------- | ------------------------------------------------------------------ |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_REQUEST_TIMEOUT`            | `30s`     | Per-request timeout for outbound calls to the Grafana HTTP API.    |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_MAX_TOKENS_PER_USER`        | `20`      | Maximum concurrently active tokens per user. `0` disables the cap. |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_MAX_SECONDS_TO_LIVE`  | `2592000` | Maximum TTL, in seconds, the plugin will mint (default 30 days).   |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_TOKEN_CLEANUP_GRACE_PERIOD` | `72h`     | Grace period after expiration before tokens are auto-deleted.      |
+| `GF_PLUGIN_JOSHUAGRISHAM_GCXONPREMOAUTH_APP_CLEANUP_INTERVAL`           | `1h`      | How often the background cleanup process runs. `0` disables it.    |
 
-Below you can find source code for existing app plugins and other related documentation.
+## Security model
 
-- [Basic app plugin example](https://github.com/grafana/grafana-plugin-examples/tree/master/examples/app-basic#readme)
-- [`plugin.json` documentation](https://grafana.com/developers/plugin-tools/reference/plugin-jsonplugin-json)
-- [Sign a plugin](https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin)
+- Each user gets a dedicated service account named `user:<login>` whose role mirrors that user's organization role. The reconciliation loop keeps the service account roles in sync with their corresponding users.
+- All token operations are authorized server-side. The plugin verifies that the requested token ID belongs to the calling user's service account before forwarding the request to the Grafana API.
+- Token names are length-validated and trimmed before being forwarded.
+- The `/authorize` flow requires a `state` parameter for CSRF protection and a loopback `callback_port`, following standard patterns for native and CLI OAuth clients.
+
+## Documentation
+
+- **Source and issue tracker**: [github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin](https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin)
+- **gcx CLI fork** (currently required for use with this plugin): [github.com/joshuagrisham/gcx](https://github.com/joshuagrisham/gcx)
+
+## Contributing
+
+Contributions, bug reports, and feature requests are welcome. Open an issue or pull request on [GitHub](https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin).
+
+## Development
+
+```bash
+# install deps
+npm install
+# frontend watch build
+npm run dev
+# backend build
+mage -v build:linux
+# spin up Grafana with the plugin mounted
+npm run server
+```
+
+### Testing
+
+```bash
+# frontend unit tests
+npm run test:ci
+# backend unit tests
+go test ./pkg/...
+# e2e tests (requires `npm run server` in another terminal)
+npm run e2e
+```
+
+### Lint and typecheck
+
+```bash
+npm run lint
+npm run typecheck
+```
+
+## Distributing / Publishing
+
+To publish to the Grafana plugin catalog (see
+[Grafana's publishing docs](https://grafana.com/developers/plugin-tools/publish-a-plugin/)):
+
+1. Tag a release (`git tag v1.0.0 && git push --tags`). The release workflow will build, sign and
+   create a draft GitHub Release with the signed `.zip` attached.
+2. Submit the signed `.zip` to Grafana via the
+   [plugin submission form](https://grafana.com/developers/plugin-tools/publish-a-plugin/publish-a-plugin/).
+
+## License
+
+[Apache-2.0](https://github.com/joshuagrisham/grafana-gcx-on-prem-oauth-plugin/blob/main/LICENSE)

@@ -7,10 +7,10 @@ import { prefixRoute } from 'utils/utils.routing';
 import { ROUTES } from '../constants';
 
 /**
- * "Set me up" page. Inspired by JFrog Artifactory's Set Me Up dialog: it
- * pre-fills a per-org "context" name and renders ready-to-copy snippets that
- * wire up gcx, cURL and the Grafana MCP server against this exact Grafana
- * instance + organization.
+ * "Client setup" page.
+ * Pre-fills a per-org "context" name and renders ready-to-copy snippets that
+ * wire up gcx, cURL, and the Grafana MCP server against this exact Grafana
+ * instance and organization.
  */
 
 const slugify = (input: string): string =>
@@ -36,7 +36,7 @@ const buildDefaultContextName = (hostname: string, orgName: string, orgId: numbe
 // Strip a trailing slash from a URL while preserving the protocol/host.
 const trimTrailingSlash = (url: string): string => url.replace(/\/+$/, '');
 
-const SetMeUpPage = () => {
+const ClientSetupPage = () => {
   const s = useStyles2(getStyles);
 
   const orgId = config.bootData.user.orgId;
@@ -311,7 +311,7 @@ const SetMeUpPage = () => {
   );
 };
 
-export default SetMeUpPage;
+export default ClientSetupPage;
 
 // ---------------------------------------------------------------------------
 // Sub-components

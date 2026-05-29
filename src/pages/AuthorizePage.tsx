@@ -6,6 +6,12 @@ import { PluginPage, getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import { PLUGIN_RESOURCES_URL } from '../constants';
 
+/**
+ * "Authorize" page.
+ * Provides an OAuth-like /authorize endpoint that handles token generation
+ * and callback to the CLI's loopback service.
+ */
+
 type Status = 'init' | 'working' | 'submitting' | 'done' | 'error';
 
 const MIN_PORT = 1;

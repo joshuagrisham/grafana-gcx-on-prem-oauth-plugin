@@ -8,6 +8,12 @@ import { CreateTokenModal } from './components/CreateTokenModal';
 import { ServiceAccountTokensTable } from './components/ServiceAccountTokensTable';
 import { PLUGIN_RESOURCES_URL } from '../constants';
 
+/**
+ * "Manage user tokens" page.
+ * Displays a list of the user's service account tokens and provides
+ * functionality to create or delete tokens.
+ */
+
 // Display name used by CreateTokenModal when seeding a default token name.
 // Showing "grafana-gui" makes it obvious in the token list that the token
 // was minted from the Grafana UI rather than from the gcx CLI.

@@ -7,8 +7,8 @@
   "autoEnabled": true,
   "executable": "gpx_joshuagrisham_gcxonpremoauth_app",
   "info": {
-    "keywords": ["gcx", "oauth", "on-prem", "authentication", "cli"],
-    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with gcx and other client applications",
+    "keywords": ["gcx", "mcp-grafana", "cli", "on-prem", "oauth", "authentication"],
+    "description": "A Grafana app for managing On-Prem OAuth user authentication for use with gcx, mcp-grafana, and other client applications",
     "author": {
       "name": "Joshua Grisham"
     },
@@ -40,12 +40,12 @@
         "path": "img/screenshots/menu.png"
       },
       {
-        "name": "Client setup page",
-        "path": "img/screenshots/set-me-up.png"
-      },
-      {
         "name": "Manage user tokens page",
         "path": "img/screenshots/manage-user-tokens.png"
+      },
+      {
+        "name": "Client setup page",
+        "path": "img/screenshots/client-setup.png"
       },
       {
         "name": "CLI sign-in success",
@@ -79,7 +79,7 @@
     {
       "type": "page",
       "icon": "rocket",
-      "name": "Set me up",
+      "name": "Client setup",
       "path": "/a/%PLUGIN_ID%/client-setup",
       "addToNav": true
     },
@@ -101,7 +101,7 @@
     }
   ],
   "dependencies": {
-    "grafanaDependency": ">=12.3.0",
+    "grafanaDependency": ">=11.0.0",
     "plugins": []
   }
 }
