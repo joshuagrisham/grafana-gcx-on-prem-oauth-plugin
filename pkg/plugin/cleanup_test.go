@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 func newCleanupApp(t *testing.T, fake *fakeGrafana) *App {
@@ -14,7 +15,7 @@ func newCleanupApp(t *testing.T, fake *fakeGrafana) *App {
 	app := &App{
 		httpClient: fake.server.Client(),
 		pluginCtx:  backend.PluginContext{PluginID: testPluginID, OrgID: 1},
-		grafanaCfg: backend.NewGrafanaCfg(map[string]string{"GF_APP_URL": fake.URL()}),
+		grafanaCfg: config.NewGrafanaCfg(map[string]string{"GF_APP_URL": fake.URL()}),
 	}
 	mux := http.NewServeMux()
 	app.registerRoutes(mux)

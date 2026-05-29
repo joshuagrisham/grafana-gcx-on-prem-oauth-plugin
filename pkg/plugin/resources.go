@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 // ---------------------------------------------------------------------------
@@ -22,7 +23,7 @@ import (
 
 func (a *App) handleTokenCreate(w http.ResponseWriter, req *http.Request) {
 	pCtx := backend.PluginConfigFromContext(req.Context())
-	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	gCfg := config.GrafanaConfigFromContext(req.Context())
 	user := backend.UserFromContext(req.Context())
 
 	var body struct {
@@ -91,8 +92,8 @@ func (a *App) handleTokenCreate(w http.ResponseWriter, req *http.Request) {
 	}
 
 	backend.Logger.Info("Token created",
-		"orgId", pCtx.OrgID, "userLogin", user.Login,
-		"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+		"orgId", pCtx.OrgID, // nolint:staticcheck
+		"userLogin", user.Login, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 		"tokenId", t.ID, "tokenName", t.Name,
 		"secondsToLive", fmt.Sprintf("%d", ttl))
 
@@ -101,7 +102,7 @@ func (a *App) handleTokenCreate(w http.ResponseWriter, req *http.Request) {
 
 func (a *App) handleTokenList(w http.ResponseWriter, req *http.Request) {
 	pCtx := backend.PluginConfigFromContext(req.Context())
-	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	gCfg := config.GrafanaConfigFromContext(req.Context())
 	user := backend.UserFromContext(req.Context())
 
 	sa, err := a.findOrCreateServiceAccount(req.Context(), gCfg, pCtx, user)
@@ -119,7 +120,7 @@ func (a *App) handleTokenList(w http.ResponseWriter, req *http.Request) {
 
 func (a *App) handleTokenDelete(w http.ResponseWriter, req *http.Request) {
 	pCtx := backend.PluginConfigFromContext(req.Context())
-	gCfg := backend.GrafanaConfigFromContext(req.Context())
+	gCfg := config.GrafanaConfigFromContext(req.Context())
 	user := backend.UserFromContext(req.Context())
 
 	tokenID, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
@@ -157,8 +158,8 @@ func (a *App) handleTokenDelete(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	backend.Logger.Info("Token deleted",
-		"orgId", pCtx.OrgID, "userLogin", user.Login,
-		"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+		"orgId", pCtx.OrgID, // nolint:staticcheck
+		"userLogin", user.Login, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 		"tokenId", tokenID)
 
 	tokens, err = a.listTokens(req.Context(), gCfg, pCtx, sa)
@@ -207,7 +208,7 @@ func serviceAccountName(login string) string {
 	return serviceAccountPrefix + login
 }
 
-func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, user *backend.User) (*serviceAccount, error) {
+func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, user *backend.User) (*serviceAccount, error) {
 	if user == nil || user.Login == "" {
 		return nil, httpError{status: http.StatusUnauthorized, err: errors.New("this feature is unavailable for anonymous users; please sign in with a user account and try again")}
 	}
@@ -243,8 +244,8 @@ func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *backend.Graf
 			return nil, fmt.Errorf("updating service account: %w", err)
 		}
 		backend.Logger.Info("Service account reconciled",
-			"orgId", pCtx.OrgID, "userLogin", user.Login,
-			"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+			"orgId", pCtx.OrgID, // nolint:staticcheck
+			"userLogin", user.Login, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 			"role", sa.Role)
 		return sa, nil
 	}
@@ -270,8 +271,8 @@ func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *backend.Graf
 		return nil, fmt.Errorf("creating service account: %w", err)
 	}
 	backend.Logger.Info("Service account created",
-		"orgId", pCtx.OrgID, "userLogin", user.Login,
-		"serviceAccountId", created.ID, "serviceAccountName", created.Name,
+		"orgId", pCtx.OrgID, // nolint:staticcheck
+		"userLogin", user.Login, "serviceAccountId", created.ID, "serviceAccountName", created.Name,
 		"role", created.Role)
 	return &created, nil
 }
@@ -279,7 +280,7 @@ func (a *App) findOrCreateServiceAccount(ctx context.Context, gCfg *backend.Graf
 // findServiceAccountByName paginates through /api/serviceaccounts/search
 // looking for an exact (Name, OrgID) match. Returns (nil, nil) when not
 // found.
-func (a *App) findServiceAccountByName(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, name string) (*serviceAccount, error) {
+func (a *App) findServiceAccountByName(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, name string) (*serviceAccount, error) {
 	const perPage = 100
 	for page := 1; page <= 100; page++ {
 		searchReq := &apiRequest{
@@ -303,7 +304,7 @@ func (a *App) findServiceAccountByName(ctx context.Context, gCfg *backend.Grafan
 		}
 		for i := range resp.ServiceAccounts {
 			sa := &resp.ServiceAccounts[i]
-			if sa.Name == name && sa.OrgID == pCtx.OrgID {
+			if sa.Name == name && sa.OrgID == pCtx.OrgID { // nolint:staticcheck
 				return sa, nil
 			}
 		}
@@ -314,7 +315,7 @@ func (a *App) findServiceAccountByName(ctx context.Context, gCfg *backend.Grafan
 	return nil, errors.New("service account search exceeded pagination limit")
 }
 
-func (a *App) createToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, name string, secondsToLive int64) (*token, error) {
+func (a *App) createToken(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, name string, secondsToLive int64) (*token, error) {
 	body := map[string]any{"name": name, "secondsToLive": secondsToLive}
 	req := &apiRequest{
 		Method: http.MethodPost,
@@ -328,7 +329,7 @@ func (a *App) createToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx ba
 	return &t, nil
 }
 
-func (a *App) listTokens(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount) ([]token, error) {
+func (a *App) listTokens(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount) ([]token, error) {
 	req := &apiRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens", sa.ID),
@@ -340,7 +341,7 @@ func (a *App) listTokens(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx bac
 	return out, nil
 }
 
-func (a *App) deleteToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, tokenID int64) error {
+func (a *App) deleteToken(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount, tokenID int64) error {
 	req := &apiRequest{
 		Method: http.MethodDelete,
 		Path:   fmt.Sprintf("/api/serviceaccounts/%d/tokens/%d", sa.ID, tokenID),
@@ -351,7 +352,7 @@ func (a *App) deleteToken(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx ba
 	return nil
 }
 
-func (a *App) deleteServiceAccount(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, saID int64) error {
+func (a *App) deleteServiceAccount(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, saID int64) error {
 	req := &apiRequest{
 		Method: http.MethodDelete,
 		Path:   fmt.Sprintf("/api/serviceaccounts/%d", saID),
@@ -373,7 +374,7 @@ type apiRequest struct {
 	Body   any
 }
 
-func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
+func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
 	if gCfg == nil {
 		return errors.New("missing Grafana config in context")
 	}
@@ -419,7 +420,7 @@ func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *backend.GrafanaCfg, p
 	}
 
 	backend.Logger.Debug("Grafana API request",
-		"method", attrs.Method, "url", reqURL, "orgId", pCtx.OrgID)
+		"method", attrs.Method, "url", reqURL, "orgId", pCtx.OrgID) // nolint:staticcheck
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -450,7 +451,7 @@ func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *backend.GrafanaCfg, p
 // Service Account API unfortunately does not respect the X-Grafana-Org-Id request header.
 // See https://grafana.com/docs/grafana/latest/developer-resources/api-reference/http-api/examples/create-api-tokens-for-org/
 // for more information.
-func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
+func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, attrs *apiRequest, out any) error {
 	if gCfg == nil {
 		return errors.New("missing Grafana config in context")
 	}
@@ -466,7 +467,7 @@ func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *backend.
 		}
 	} else {
 		if _, _, ok := a.backendBasicAuth(); !ok {
-			return fmt.Errorf("missing authentication credentials for orgId %d; please contact an administrator", pCtx.OrgID)
+			return fmt.Errorf("missing authentication credentials for orgId %d; please contact an administrator", pCtx.OrgID) // nolint:staticcheck
 		}
 	}
 
@@ -486,10 +487,10 @@ func (a *App) grafanaAPIRequestWithOrgSwitch(ctx context.Context, gCfg *backend.
 
 	req := &apiRequest{
 		Method: http.MethodPost,
-		Path:   fmt.Sprintf("/api/user/using/%d", pCtx.OrgID),
+		Path:   fmt.Sprintf("/api/user/using/%d", pCtx.OrgID), // nolint:staticcheck
 	}
 	if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, req, nil); err != nil {
-		return fmt.Errorf("switching user org context to %d: %w", pCtx.OrgID, err)
+		return fmt.Errorf("switching user org context to %d: %w", pCtx.OrgID, err) // nolint:staticcheck
 	}
 
 	return a.grafanaAPIRequest(ctx, gCfg, pCtx, attrs, out)
@@ -510,7 +511,7 @@ func (a *App) setGrafanaAuthHeader(pCtx backend.PluginContext, req *http.Request
 		return nil
 	}
 
-	return fmt.Errorf("no Grafana API credentials configured for this plugin instance in orgId %d", pCtx.OrgID)
+	return fmt.Errorf("no Grafana API credentials configured for this plugin instance in orgId %d", pCtx.OrgID) // nolint:staticcheck
 }
 
 // ---------------------------------------------------------------------------

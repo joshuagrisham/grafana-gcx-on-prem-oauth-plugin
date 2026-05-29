@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 // startCleanupProcess launches the background cleanup goroutine for this
@@ -17,7 +18,7 @@ func (a *App) startCleanupProcess() {
 	interval := a.cleanupInterval()
 	if interval <= 0 {
 		backend.Logger.Info("Background cleanup process disabled (interval <= 0)",
-			"orgId", a.pluginCtx.OrgID)
+			"orgId", a.pluginCtx.OrgID) // nolint:staticcheck
 		return
 	}
 
@@ -25,7 +26,7 @@ func (a *App) startCleanupProcess() {
 	// Propagate plugin context and grafana cfg so the API client can
 	// authenticate.
 	ctx = backend.WithPluginContext(ctx, a.pluginCtx)
-	ctx = backend.WithGrafanaConfig(ctx, a.grafanaCfg)
+	ctx = config.WithGrafanaConfig(ctx, a.grafanaCfg)
 
 	a.bgCancel = cancel
 	a.bgDone = make(chan struct{})
@@ -47,7 +48,8 @@ func (a *App) startCleanupProcess() {
 
 			if err := a.cleanup(ctx); err != nil {
 				backend.Logger.Warn("Cleanup cycle failed",
-					"orgId", a.pluginCtx.OrgID, "error", err)
+					"orgId", a.pluginCtx.OrgID, // nolint:staticcheck
+					"error", err)
 			}
 
 			timer.Reset(interval)
@@ -63,7 +65,7 @@ func (a *App) cleanup(ctx context.Context) error {
 	gCfg := a.grafanaCfg
 
 	backend.Logger.Info("Cleanup cycle starting",
-		"orgId", pCtx.OrgID)
+		"orgId", pCtx.OrgID) // nolint:staticcheck
 
 	sas, err := a.listAllPluginServiceAccounts(ctx, gCfg, pCtx)
 	if err != nil {
@@ -92,8 +94,8 @@ func (a *App) cleanup(ctx context.Context) error {
 				// takes effect immediately without needing to revoke tokens.
 				if u.Role != "" && u.Role != sa.Role {
 					backend.Logger.Info("Reconciling service account role",
-						"orgId", pCtx.OrgID, "userLogin", u.Login,
-						"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+						"orgId", pCtx.OrgID, // nolint:staticcheck
+						"userLogin", u.Login, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 						"oldRole", sa.Role, "newRole", u.Role)
 					patch := &apiRequest{
 						Method: http.MethodPatch,
@@ -106,8 +108,9 @@ func (a *App) cleanup(ctx context.Context) error {
 					}
 					if err := a.grafanaAPIRequest(ctx, gCfg, pCtx, patch, nil); err != nil {
 						backend.Logger.Warn("Failed to patch service account role",
-							"orgId", pCtx.OrgID, "serviceAccountId", sa.ID,
-							"serviceAccountName", sa.Name, "error", err)
+							"orgId", pCtx.OrgID, // nolint:staticcheck
+							"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+							"error", err)
 					}
 				}
 				// As we have found the match, set isActiveUser and exit the loop.
@@ -120,11 +123,13 @@ func (a *App) cleanup(ctx context.Context) error {
 		// disabled.
 		if !isActiveUser {
 			backend.Logger.Info("User disabled or no longer exists; deleting service account",
-				"orgId", pCtx.OrgID, "serviceAccountId", sa.ID,
+				"orgId", pCtx.OrgID, // nolint:staticcheck
+				"serviceAccountId", sa.ID,
 				"serviceAccountName", sa.Name)
 			if err := a.deleteServiceAccount(ctx, gCfg, pCtx, sa.ID); err != nil {
 				backend.Logger.Warn("Failed to delete service account",
-					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID,
+					"orgId", pCtx.OrgID, // nolint:staticcheck
+					"serviceAccountId", sa.ID,
 					"serviceAccountName", sa.Name, "error", err)
 			}
 			continue
@@ -132,18 +137,20 @@ func (a *App) cleanup(ctx context.Context) error {
 
 		// If the user is still active, clean up any expired tokens.
 		backend.Logger.Debug("Cleaning up expired tokens for active user service account",
-			"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name)
+			"orgId", pCtx.OrgID, // nolint:staticcheck
+			"serviceAccountId", sa.ID, "serviceAccountName", sa.Name)
 		a.cleanupExpiredTokens(ctx, gCfg, pCtx, &sa)
 	}
 
 	backend.Logger.Info("Cleanup cycle complete",
-		"orgId", pCtx.OrgID, "serviceAccountsProcessed", len(sas))
+		"orgId", pCtx.OrgID, // nolint:staticcheck
+		"serviceAccountsProcessed", len(sas))
 	return nil
 }
 
 // listAllPluginServiceAccounts returns every SA in this org whose name
 // starts with the plugin's prefix.
-func (a *App) listAllPluginServiceAccounts(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext) ([]serviceAccount, error) {
+func (a *App) listAllPluginServiceAccounts(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext) ([]serviceAccount, error) {
 	const perPage = 1000
 	var all []serviceAccount
 	for page := 1; page <= 1000; page++ {
@@ -163,7 +170,7 @@ func (a *App) listAllPluginServiceAccounts(ctx context.Context, gCfg *backend.Gr
 			return nil, err
 		}
 		for _, sa := range resp.ServiceAccounts {
-			if strings.HasPrefix(sa.Name, serviceAccountPrefix) && sa.OrgID == pCtx.OrgID {
+			if strings.HasPrefix(sa.Name, serviceAccountPrefix) && sa.OrgID == pCtx.OrgID { // nolint:staticcheck
 				all = append(all, sa)
 			}
 		}
@@ -184,7 +191,7 @@ type grafanaOrgUser struct {
 }
 
 // listAllOrgUsers returns all users in the current org.
-func (a *App) listAllOrgUsers(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext) ([]grafanaOrgUser, error) {
+func (a *App) listAllOrgUsers(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext) ([]grafanaOrgUser, error) {
 	req := &apiRequest{
 		Method: http.MethodGet,
 		Path:   "/api/org/users",
@@ -198,23 +205,26 @@ func (a *App) listAllOrgUsers(ctx context.Context, gCfg *backend.GrafanaCfg, pCt
 
 // cleanupExpiredTokens gets all tokens for the given SA and deletes any that
 // have expired beyond the grace period.
-func (a *App) cleanupExpiredTokens(ctx context.Context, gCfg *backend.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount) {
+func (a *App) cleanupExpiredTokens(ctx context.Context, gCfg *config.GrafanaCfg, pCtx backend.PluginContext, sa *serviceAccount) {
 	tokens, err := a.listTokens(ctx, gCfg, pCtx, sa)
 	if err != nil {
 		backend.Logger.Warn("Failed to list tokens for cleanup",
-			"orgId", pCtx.OrgID, "serviceAccountId", sa.ID,
-			"serviceAccountName", sa.Name, "error", err)
+			"orgId", pCtx.OrgID, // nolint:staticcheck
+			"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+			"error", err)
 		return
 	}
 
 	for _, t := range tokens {
 		if t.Expiration == nil {
 			backend.Logger.Warn("Token has no expiration timestamp which indicates that it was not created by the plugin; deleting",
-				"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+				"orgId", pCtx.OrgID, // nolint:staticcheck
+				"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 				"tokenId", t.ID, "tokenName", t.Name)
 		} else if !t.HasExpired {
 			backend.Logger.Debug("Token is still valid; skipping",
-				"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+				"orgId", pCtx.OrgID, // nolint:staticcheck
+				"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 				"tokenId", t.ID, "tokenName", t.Name,
 				"expiration", t.Expiration)
 			continue
@@ -222,23 +232,27 @@ func (a *App) cleanupExpiredTokens(ctx context.Context, gCfg *backend.GrafanaCfg
 			exp, err := time.Parse(time.RFC3339, *t.Expiration)
 			if err != nil {
 				backend.Logger.Warn("Token is expired but has an invalid expiration timestamp; deleting",
-					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+					"orgId", pCtx.OrgID, // nolint:staticcheck
+					"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 					"tokenId", t.ID, "tokenName", t.Name,
 					"error", err)
 			} else if time.Since(exp) < a.tokenCleanupGracePeriod() {
 				backend.Logger.Debug("Token is expired but still within the grace period; skipping",
-					"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+					"orgId", pCtx.OrgID, // nolint:staticcheck
+					"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 					"tokenId", t.ID, "tokenName", t.Name,
 					"expiration", t.Expiration, "timeSinceExpiration", time.Since(exp).String())
 				continue
 			}
 		}
 		backend.Logger.Info("Cleaning up expired or invalid token",
-			"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+			"orgId", pCtx.OrgID, // nolint:staticcheck
+			"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 			"tokenId", t.ID, "tokenName", t.Name, "expiration", t.Expiration)
 		if err := a.deleteToken(ctx, gCfg, pCtx, sa, t.ID); err != nil {
 			backend.Logger.Warn("Failed to delete expired token",
-				"orgId", pCtx.OrgID, "serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
+				"orgId", pCtx.OrgID, // nolint:staticcheck
+				"serviceAccountId", sa.ID, "serviceAccountName", sa.Name,
 				"tokenId", t.ID, "tokenName", t.Name,
 				"error", err)
 		}
