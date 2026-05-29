@@ -382,11 +382,7 @@ func (a *App) grafanaAPIRequest(ctx context.Context, gCfg *config.GrafanaCfg, pC
 		pCtx = a.pluginCtx
 	}
 
-	appURL, err := gCfg.AppURL()
-	if err != nil {
-		return err
-	}
-	reqURL, err := url.JoinPath(appURL, attrs.Path)
+	reqURL, err := url.JoinPath(a.backendUrl(), attrs.Path)
 	if err != nil {
 		return err
 	}
