@@ -21,7 +21,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: grafana/plugin-actions/build-plugin@8b12a2d6fa5fc0939a6bf75905453d4b505ef29a # build-plugin/v1.2.0
+      - uses: grafana/plugin-actions/build-plugin@a66a1c96cdbb176f9cccf10cf23593e250db7cce # build-plugin/v1.1.0
         with:
           go-version: 1.26.3 # matches the version in go.mod
           # TODO: Add the policy_token back once the plugin is reviewed and accepted by Grafana
